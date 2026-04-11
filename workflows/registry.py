@@ -34,6 +34,7 @@ WORKFLOW_REGISTRY: dict[str, WorkflowMetadata] = {
         steps=WORKFLOW_STEPS,
         trigger=should_trigger_deal_followup,
         config={
+            "release_version": "2026.04.1",
             "max_risk_tier_by_phase": {
                 "default": "high",
                 "autonomous": "medium",
@@ -46,6 +47,7 @@ WORKFLOW_REGISTRY: dict[str, WorkflowMetadata] = {
         steps=NEW_DEAL_WORKFLOW_STEPS,
         trigger=should_trigger_new_deal_outreach,
         config={
+            "release_version": "2026.04.1",
             "max_risk_tier_by_phase": {
                 "default": "medium",
                 "autonomous": "low",
@@ -69,3 +71,8 @@ def is_known_workflow(name: str) -> bool:
 
 def get_registered_workflow_names() -> list[str]:
     return sorted(WORKFLOW_REGISTRY.keys())
+
+
+def get_workflow_release_version(name: str | None = None) -> str:
+    workflow = get_workflow(name)
+    return str(workflow.config.get("release_version", "unversioned"))

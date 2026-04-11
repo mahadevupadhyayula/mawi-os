@@ -259,7 +259,8 @@ class PromptDiagnosticsRepository:
             ).fetchall()
             rollout_rows = conn.execute(
                 """
-                SELECT workflow_id, rollout_phase, canary_percent, promoted_default_variant, updated_at
+                SELECT workflow_id, rollout_phase, canary_percent, promoted_default_variant,
+                       active_release_id, previous_stable_release_id, workflow_release_version, updated_at
                 FROM prompt_variant_rollouts
                 ORDER BY workflow_id ASC
                 """
@@ -360,14 +361,98 @@ class PromptDiagnosticsRepository:
                     workflow_id, rollout_phase, canary_percent,
                     degradation_reply_threshold, degradation_meeting_threshold,
                     degradation_execution_threshold, degradation_rejection_threshold,
-                    promoted_default_variant, updated_at
-                ) VALUES (?, 'shadow', 0.1, 0.05, 0.03, 0.05, 0.05, 'A', ?)
+                    promoted_default_variant, active_release_id, previous_stable_release_id,
+                    workflow_release_version, updated_at
+                ) VALUES (?, 'shadow', 0.1, 0.05, 0.03, 0.05, 0.05, 'A', '', '', 'unversioned', ?)
                 ON CONFLICT(workflow_id) DO NOTHING
                 """,
                 (workflow_id, now),
             )
             row = conn.execute("SELECT * FROM prompt_variant_rollouts WHERE workflow_id=?", (workflow_id,)).fetchone()
         return dict(row) if row else {"workflow_id": workflow_id, "rollout_phase": "shadow", "canary_percent": 0.1, "promoted_default_variant": "A"}
+
+    def register_prompt_release(
+        self,
+        *,
+        release_id: str,
+        workflow_id: str,
+        workflow_release_version: str,
+        prompt_profile_version: str,
+        owner: str,
+        status: str,
+        changelog_note: str,
+    ) -> None:
+        if not changelog_note.strip():
+            raise ValueError("Prompt release updates require a changelog_note.")
+        if status not in {"draft", "active", "deprecated"}:
+            raise ValueError("status must be one of: draft, active, deprecated.")
+        self._get_or_create_rollout(workflow_id)
+        now = datetime.now(timezone.utc).isoformat()
+        with self.db.tx() as conn:
+            previous_stable_row = conn.execute(
+                """
+                SELECT release_id
+                FROM prompt_release_sets
+                WHERE workflow_id=? AND status='active'
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (workflow_id,),
+            ).fetchone()
+            previous_stable_release_id = str(previous_stable_row["release_id"]) if previous_stable_row else None
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO prompt_release_sets (
+                    release_id, workflow_id, workflow_release_version, prompt_profile_version,
+                    status, owner, changelog_note, previous_stable_release_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    release_id,
+                    workflow_id,
+                    workflow_release_version,
+                    prompt_profile_version,
+                    status,
+                    owner,
+                    changelog_note,
+                    previous_stable_release_id,
+                    now,
+                ),
+            )
+            if status == "active":
+                conn.execute(
+                    """
+                    UPDATE prompt_variant_rollouts
+                    SET previous_stable_release_id = COALESCE(NULLIF(active_release_id, ''), previous_stable_release_id),
+                        active_release_id = ?,
+                        workflow_release_version = ?,
+                        updated_at = ?
+                    WHERE workflow_id = ?
+                    """,
+                    (release_id, workflow_release_version, now, workflow_id),
+                )
+
+    def record_promotion_approval(
+        self,
+        *,
+        workflow_id: str,
+        release_id: str,
+        approver: str,
+        decision: str,
+        note: str,
+    ) -> None:
+        if decision not in {"approved", "rejected"}:
+            raise ValueError("decision must be 'approved' or 'rejected'.")
+        now = datetime.now(timezone.utc).isoformat()
+        with self.db.tx() as conn:
+            conn.execute(
+                """
+                INSERT INTO prompt_promotion_approvals (
+                    workflow_id, release_id, approver, decision, note, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (workflow_id, release_id, approver, decision, note, now),
+            )
 
     def _evaluate_rollout_health(self, conn: Any, *, workflow_id: str) -> None:
         rollout = conn.execute("SELECT * FROM prompt_variant_rollouts WHERE workflow_id=?", (workflow_id,)).fetchone()
@@ -409,7 +494,14 @@ class PromptDiagnosticsRepository:
         now = datetime.now(timezone.utc).isoformat()
         if degraded and str(rollout["rollout_phase"]) != "shadow":
             conn.execute(
-                "UPDATE prompt_variant_rollouts SET rollout_phase='shadow', promoted_default_variant='A', updated_at=? WHERE workflow_id=?",
+                """
+                UPDATE prompt_variant_rollouts
+                SET rollout_phase='shadow',
+                    promoted_default_variant='A',
+                    active_release_id=COALESCE(NULLIF(previous_stable_release_id, ''), active_release_id),
+                    updated_at=?
+                WHERE workflow_id=?
+                """,
                 (now, workflow_id),
             )
             conn.execute(
@@ -428,6 +520,25 @@ class PromptDiagnosticsRepository:
             and rate(candidate, "rejections") <= rate(control, "rejections")
         )
         if better and int(candidate["exposures"]) >= 25 and str(rollout["promoted_default_variant"]) != "B":
+            active_release_id = str(rollout["active_release_id"] or "")
+            if not active_release_id:
+                return
+            approval_counts = conn.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN decision='approved' THEN 1 ELSE 0 END) AS approvals,
+                    SUM(CASE WHEN decision='rejected' THEN 1 ELSE 0 END) AS rejections
+                FROM prompt_promotion_approvals
+                WHERE workflow_id=? AND release_id=?
+                """,
+                (workflow_id, active_release_id),
+            ).fetchone()
+            if not approval_counts:
+                return
+            approvals = int(approval_counts["approvals"] or 0)
+            rejections = int(approval_counts["rejections"] or 0)
+            if approvals < 2 or rejections > 0:
+                return
             conn.execute(
                 "UPDATE prompt_variant_rollouts SET promoted_default_variant='B', rollout_phase='full', updated_at=? WHERE workflow_id=?",
                 (now, workflow_id),

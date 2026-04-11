@@ -87,6 +87,74 @@ class TestPromptExperimentRollout(unittest.TestCase):
         rollouts = {row["workflow_id"]: row for row in report["experiments"]["rollouts"]}
         self.assertEqual(rollouts[workflow_id]["rollout_phase"], "shadow")
 
+    def test_promotion_requires_approval_gate(self) -> None:
+        workflow_id = "deal_followup_workflow"
+        self.repo.register_prompt_release(
+            release_id="release-2026-04-11",
+            workflow_id=workflow_id,
+            workflow_release_version="2026.04.1",
+            prompt_profile_version="1.1.0",
+            owner="prompt-governance@mawi",
+            status="active",
+            changelog_note="Promote governed prompt registry set.",
+        )
+        with self.repo.db.tx() as conn:
+            conn.execute(
+                """
+                UPDATE prompt_variant_rollouts
+                SET rollout_phase='canary', canary_percent=1.0, promoted_default_variant='A'
+                WHERE workflow_id=?
+                """,
+                (workflow_id,),
+            )
+
+        for idx in range(30):
+            run_a = f"run-pa-{idx}"
+            run_b = f"run-pb-{idx}"
+            with self.repo.db.tx() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO prompt_variant_assignments (
+                        run_id, workflow_id, bucket, assigned_variant, effective_variant, rollout_phase, created_at
+                    ) VALUES (?, ?, 'A', 'A', 'A', 'canary', ?)
+                    """,
+                    (run_a, workflow_id, "2026-01-01T00:00:00+00:00"),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO prompt_variant_assignments (
+                        run_id, workflow_id, bucket, assigned_variant, effective_variant, rollout_phase, created_at
+                    ) VALUES (?, ?, 'B', 'B', 'B', 'canary', ?)
+                    """,
+                    (run_b, workflow_id, "2026-01-01T00:00:00+00:00"),
+                )
+            self.repo.record_outcome_metrics(run_id=run_a, reply_received=False, meeting_booked=False, execution_success=False)
+            self.repo.record_outcome_metrics(run_id=run_b, reply_received=True, meeting_booked=True, execution_success=True)
+
+        report = self.repo.diagnostics_report(limit=20)
+        rollouts = {row["workflow_id"]: row for row in report["experiments"]["rollouts"]}
+        self.assertNotEqual(rollouts[workflow_id]["rollout_phase"], "full")
+
+        self.repo.record_promotion_approval(
+            workflow_id=workflow_id,
+            release_id="release-2026-04-11",
+            approver="owner-1@mawi",
+            decision="approved",
+            note="SLOs healthy.",
+        )
+        self.repo.record_promotion_approval(
+            workflow_id=workflow_id,
+            release_id="release-2026-04-11",
+            approver="owner-2@mawi",
+            decision="approved",
+            note="Business sign-off complete.",
+        )
+        self.repo.record_outcome_metrics(run_id="run-pb-0", reply_received=True, meeting_booked=True, execution_success=True)
+
+        report = self.repo.diagnostics_report(limit=20)
+        rollouts = {row["workflow_id"]: row for row in report["experiments"]["rollouts"]}
+        self.assertEqual(rollouts[workflow_id]["rollout_phase"], "full")
+
 
 if __name__ == "__main__":
     unittest.main()
