@@ -1,6 +1,13 @@
 import unittest
 
-from agents.prompt_templates import PROMPT_OUTPUT_MODELS, get_prompt_fallback_telemetry, render_prompt
+from agents.prompt_templates import (
+    PROMPT_OUTPUT_MODELS,
+    PromptLintError,
+    generate_prompt_health_report,
+    get_prompt_fallback_telemetry,
+    render_prompt,
+    validate_prompt_health_report,
+)
 from context.models import DealContext
 
 
@@ -30,7 +37,6 @@ class TestPromptContracts(unittest.TestCase):
                 },
             )
 
-        self.assertIn("workflow_goal", str(ctx.exception))
         self.assertIn("workflow_goal", str(ctx.exception))
 
     def test_render_prompt_raises_for_unknown_workflow_id(self) -> None:
@@ -80,7 +86,7 @@ class TestPromptContracts(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "Return JSON object with required fields: reasoning, confidence, persona, deal_stage, "
+            "Output Fields: Return JSON object with required fields: reasoning, confidence, persona, deal_stage, "
             "known_objections, recent_timeline, recommended_tone.",
             rendered,
         )
@@ -105,6 +111,26 @@ class TestPromptContracts(unittest.TestCase):
             header_fields = rendered.split("required_json_fields: ", maxsplit=1)[1].split("\n", maxsplit=1)[0]
             for field in required_fields:
                 self.assertIn(f'"{field}"', header_fields)
+
+    def test_render_prompt_rejects_unused_render_kwargs(self) -> None:
+        with self.assertRaises(PromptLintError) as ctx:
+            render_prompt(
+                "signal_prompt.txt",
+                prompt_contract={
+                    "workflow_goal": "Detect stalled deal activity.",
+                    "stage_name": "signal_agent",
+                    "policy_mode": "observe_only",
+                },
+                extra_placeholder="not-used",
+            )
+
+        self.assertIn("unused render kwargs", str(ctx.exception))
+
+    def test_prompt_health_report_passes_for_all_workflow_agent_combinations(self) -> None:
+        report = generate_prompt_health_report()
+        self.assertEqual(report["summary"]["failed"], 0)
+        self.assertGreater(report["summary"]["total"], 0)
+        validate_prompt_health_report(report)
 
 
 if __name__ == "__main__":
