@@ -25,7 +25,7 @@ from context.models import (
     OutcomeContext,
     SignalContext,
 )
-from workflows.registry import DEFAULT_WORKFLOW_NAME, is_known_workflow
+from workflows.registry import DEFAULT_WORKFLOW_NAME, get_registered_workflow_names, is_known_workflow
 
 PROMPT_DIR = Path(__file__).parent / "prompts"
 COMMON_PROMPT_PROFILE = "common"
@@ -48,8 +48,21 @@ PROMPT_OUTPUT_MODELS: dict[str, type] = {
     "evaluator_prompt.txt": OutcomeContext,
 }
 
+PROMPT_REQUIRED_SECTIONS: dict[str, str] = {
+    "role": "Role:",
+    "task": "Task:",
+    "constraints": "Constraints:",
+    "output_fields": "Output Fields:",
+    "safety_limits": "Safety Limits:",
+}
+
 _PROMPT_FALLBACK_TELEMETRY: dict[str, int] = {}
 _PROMPT_TELEMETRY_LOCK = Lock()
+_TEMPLATE_TOKEN_PATTERN = re.compile(r"\$\{([_a-zA-Z][_a-zA-Z0-9]*)\}|\$([_a-zA-Z][_a-zA-Z0-9]*)")
+
+
+class PromptLintError(ValueError):
+    """Raised when prompt templates fail lint or render-time contract checks."""
 
 
 def _record_prompt_fallback_event(*, workflow_id: str, prompt_name: str, reason: str) -> None:
@@ -153,6 +166,116 @@ def _contract_header(contract: Mapping[str, str]) -> str:
     )
 
 
+def _extract_template_placeholders(template_text: str) -> set[str]:
+    names: set[str] = set()
+    for match in _TEMPLATE_TOKEN_PATTERN.finditer(template_text):
+        names.add(match.group(1) or match.group(2) or "")
+    names.discard("")
+    return names
+
+
+def _ensure_required_sections(template_text: str, template_name: str) -> list[str]:
+    missing_sections = []
+    for section, marker in PROMPT_REQUIRED_SECTIONS.items():
+        if marker not in template_text:
+            missing_sections.append(section)
+    errors = []
+    if missing_sections:
+        errors.append(
+            f"missing required sections: {', '.join(missing_sections)}"
+        )
+    return errors
+
+
+def _style_ambiguity_checks(template_text: str) -> list[str]:
+    errors: list[str] = []
+    constraints_line = next((line for line in template_text.splitlines() if line.startswith("Constraints:")), "")
+    safety_line = next((line for line in template_text.splitlines() if line.startswith("Safety Limits:")), "")
+    combined = " ".join((constraints_line, safety_line)).lower()
+    if "always" in combined and "never" in combined:
+        errors.append("conflicting constraints detected (contains both 'always' and 'never').")
+    confidence_patterns = [
+        r"confidence\s*(in|between)?\s*\[\s*0\s*,\s*1\s*\]",
+        r"confidence\s*between\s*0\s*and\s*1",
+    ]
+    if not any(re.search(pattern, combined) for pattern in confidence_patterns):
+        errors.append("missing confidence bounds (must constrain confidence to [0,1]).")
+    return errors
+
+
+def lint_prompt_template(
+    *,
+    template_name: str,
+    workflow_id: str,
+    template_text: str,
+    render_variables: Mapping[str, str],
+    extra_render_keys: set[str] | None = None,
+) -> list[str]:
+    errors: list[str] = []
+    errors.extend(_ensure_required_sections(template_text, template_name))
+    errors.extend(_style_ambiguity_checks(template_text))
+
+    placeholders = _extract_template_placeholders(template_text)
+    missing_placeholders = sorted(placeholders - set(render_variables.keys()))
+    if missing_placeholders:
+        errors.append(f"unresolved placeholders: {', '.join(missing_placeholders)}")
+
+    unused_render_vars = sorted((extra_render_keys or set()) - placeholders)
+    if unused_render_vars:
+        errors.append(f"unused render kwargs: {', '.join(unused_render_vars)}")
+
+    return [f"[{workflow_id}/{template_name}] {error}" for error in errors]
+
+
+def generate_prompt_health_report() -> dict[str, Any]:
+    report_rows: list[dict[str, Any]] = []
+    for workflow_id in get_registered_workflow_names():
+        for template_name in sorted(PROMPT_OUTPUT_MODELS.keys()):
+            contract = _normalize_contract(
+                template_name,
+                {
+                    "workflow_id": workflow_id,
+                    "workflow_goal": "Prompt health lint run.",
+                    "stage_name": template_name.replace("_prompt.txt", ""),
+                    "policy_mode": "observe_only",
+                },
+            )
+            template_text = load_prompt(template_name, workflow_id)
+            lint_errors = lint_prompt_template(
+                template_name=template_name,
+                workflow_id=workflow_id,
+                template_text=template_text,
+                render_variables=contract,
+            )
+            report_rows.append(
+                {
+                    "workflow_id": workflow_id,
+                    "agent_prompt": template_name,
+                    "status": "pass" if not lint_errors else "fail",
+                    "errors": lint_errors,
+                }
+            )
+    failures = [row for row in report_rows if row["status"] == "fail"]
+    return {
+        "summary": {
+            "total": len(report_rows),
+            "passed": len(report_rows) - len(failures),
+            "failed": len(failures),
+        },
+        "rows": report_rows,
+    }
+
+
+def validate_prompt_health_report(report: Mapping[str, Any]) -> None:
+    failing = [row for row in report.get("rows", []) if row.get("status") != "pass"]
+    if failing:
+        details = "; ".join(
+            f"{row.get('workflow_id')}/{row.get('agent_prompt')}: {', '.join(row.get('errors', []))}"
+            for row in failing
+        )
+        raise PromptLintError(f"Prompt health report contains failures: {details}")
+
+
 def render_prompt(name: str, *, prompt_contract: Mapping[str, Any] | None = None, **kwargs: str) -> str:
     contract = _normalize_contract(name, prompt_contract)
     prompt_text = load_prompt(name, contract["workflow_id"])
@@ -162,6 +285,18 @@ def render_prompt(name: str, *, prompt_contract: Mapping[str, Any] | None = None
         raise ValueError(
             f"Prompt schema '{declared_schema}' is not compatible with context schema '{CONTEXT_SCHEMA_VERSION}'."
         )
+
+    render_variables = {**contract, **kwargs}
+    lint_errors = lint_prompt_template(
+        template_name=name,
+        workflow_id=contract["workflow_id"],
+        template_text=prompt_text,
+        render_variables=render_variables,
+        extra_render_keys=set(kwargs.keys()),
+    )
+    if lint_errors:
+        raise PromptLintError("; ".join(lint_errors))
+
     template = Template(prompt_text)
-    rendered_body = template.safe_substitute(**{**contract, **kwargs})
+    rendered_body = template.substitute(**render_variables)
     return f"{_contract_header(contract)}\n\n{rendered_body}"
