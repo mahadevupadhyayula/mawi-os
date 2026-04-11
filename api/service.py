@@ -15,6 +15,8 @@ from agents.contracts import ExecutionOutcome
 from approval.action_lifecycle import approve, edit, reject
 from context.models import (
     ActionContext,
+    ActionPlanContext,
+    ActionStep,
     ContextEnvelope,
     DealContext,
     DecisionContext,
@@ -66,6 +68,10 @@ class WorkflowAPI:
         deal_id = self._find_deal_for_action(action_id)
         envelope = self._load_envelope(deal_id)
         envelope.action_context.status = "approved"
+        if envelope.action_plan:
+            envelope.action_plan.status = "approved"
+            for step in envelope.action_plan.steps:
+                step.status = "approved"
         outcome = ExecutionOutcome(reply_received=reply_received, meeting_booked=meeting_booked)
         resumed = self.orchestrator.resume_after_approval(envelope, outcome)
         self._deal_envelopes[deal_id] = resumed
@@ -80,6 +86,10 @@ class WorkflowAPI:
         deal_id = self._find_deal_for_action(action_id)
         envelope = self._load_envelope(deal_id)
         envelope.action_context.status = "rejected"
+        if envelope.action_plan:
+            envelope.action_plan.status = "rejected"
+            for step in envelope.action_plan.steps:
+                step.status = "rejected"
         self._deal_envelopes[deal_id] = envelope
         return {"status": "rejected", "deal_id": deal_id, "action_id": action_id, "reason": reason}
 
@@ -96,6 +106,14 @@ class WorkflowAPI:
         if body_draft is not None:
             envelope.action_context.body_draft = body_draft
         envelope.action_context.status = "pending_approval"
+        if envelope.action_plan and envelope.action_plan.steps:
+            envelope.action_plan.status = "pending_approval"
+            first_step = sorted(envelope.action_plan.steps, key=lambda step: step.order)[0]
+            if preview is not None:
+                first_step.preview = preview
+            if body_draft is not None:
+                first_step.body_draft = body_draft
+            first_step.status = "pending_approval"
         self._deal_envelopes[deal_id] = envelope
         return {"status": "edited", "deal_id": deal_id, "action_id": action_id}
 
@@ -163,8 +181,20 @@ class WorkflowAPI:
             deal_context=hydrate(DealContext, payload.get("deal_context")),
             decision_context=hydrate(DecisionContext, payload.get("decision_context")),
             action_context=hydrate(ActionContext, payload.get("action_context")),
+            action_plan=self._hydrate_action_plan(payload.get("action_plan")),
             execution_context=hydrate(ExecutionContext, payload.get("execution_context")),
             outcome_context=hydrate(OutcomeContext, payload.get("outcome_context")),
             raw_data=payload.get("raw_data", {}),
             history=payload.get("history", []),
         )
+
+    def _hydrate_action_step(self, value: dict) -> ActionStep:
+        return ActionStep(**value)
+
+    def _hydrate_action_plan(self, value: dict | None) -> ActionPlanContext | None:
+        if value is None:
+            return None
+        data = dict(value)
+        data["meta"] = SectionMeta(**data.get("meta", {}))
+        data["steps"] = [self._hydrate_action_step(item) for item in data.get("steps", [])]
+        return ActionPlanContext(**data)

@@ -20,7 +20,7 @@ from agents.contracts import ExecutionOutcome
 from approval.policy import requires_approval
 from approval.queue import ApprovalQueue
 from context.envelope import append_or_refine_section, set_stage
-from context.models import ContextEnvelope, MetaContext
+from context.models import ActionContext, ActionPlanContext, ActionStep, ContextEnvelope, MetaContext
 from data.models import RUN_STATUS_COMPLETED, RUN_STATUS_RUNNING, RUN_STATUS_SKIPPED, RUN_STATUS_WAITING_APPROVAL
 from data.repositories import ActionRepository, OutcomeRepository, WorkflowRepository
 from memory.long_term_store import LongTermMemory
@@ -101,21 +101,43 @@ class WorkflowOrchestrator:
             return True
 
         if step == "action_agent":
-            action = with_retries(lambda: action_agent(envelope.decision_context, envelope.deal_context))
-            if requires_approval(action.confidence, self.approval_threshold):
+            action_plan = with_retries(lambda: action_agent(envelope.decision_context, envelope.deal_context))
+            if not action_plan.steps:
+                raise ValueError("action_agent returned an empty action plan")
+            first_step = sorted(action_plan.steps, key=lambda item: item.order)[0]
+            action = ActionContext(
+                action_id=first_step.step_id,
+                type=first_step.action_type,
+                subject=first_step.subject,
+                preview=first_step.preview,
+                body_draft=first_step.body_draft,
+                status=first_step.status,
+                reasoning=action_plan.reasoning,
+                confidence=action_plan.confidence,
+            )
+            action_requires_approval = requires_approval(action_plan.confidence, self.approval_threshold)
+            if action_requires_approval:
+                action_plan.status = "pending_approval"
+                for plan_step in action_plan.steps:
+                    plan_step.status = "pending_approval"
                 action.status = "pending_approval"
                 self.queue.enqueue(asdict(action))
                 set_stage(envelope, "waiting_approval")
                 self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_WAITING_APPROVAL)
                 log_step("action_agent", "Action routed to approval queue.")
             else:
+                action_plan.status = "approved"
+                for plan_step in action_plan.steps:
+                    plan_step.status = "approved"
                 action.status = "approved"
                 set_stage(envelope, "action_done")
                 self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
                 log_step("action_agent", "Action auto-approved by policy.")
 
             append_or_refine_section(envelope, agent_name="action_agent", section_value=action)
+            envelope.action_plan = action_plan
             self.action_repo.upsert_action(run_id, deal_id, action)
+            self.action_repo.upsert_action_plan(run_id, deal_id, action.action_id, action_plan)
             self._snapshot(deal_id, envelope, source_agent="action_agent")
             self.long_memory.add_outcome(
                 OutcomeRecord(deal_id=deal_id, action_id=action.action_id, outcome_label="pending", insight="Action created")
@@ -132,10 +154,34 @@ class WorkflowOrchestrator:
         if action_ctx is None:
             raise ValueError("Missing action_context")
         action_ctx.status = "approved"
+        action_plan = envelope.action_plan or ActionPlanContext(
+            plan_id=f"plan-{action_ctx.action_id}",
+            steps=[],
+            status=action_ctx.status,
+            reasoning=action_ctx.reasoning,
+            confidence=action_ctx.confidence,
+        )
+        if not action_plan.steps:
+            action_plan.steps.append(
+                ActionStep(
+                    step_id=action_ctx.action_id,
+                    order=1,
+                    channel="email",
+                    action_type=action_ctx.type,
+                    subject=action_ctx.subject,
+                    preview=action_ctx.preview,
+                    body_draft=action_ctx.body_draft,
+                    status="approved",
+                )
+            )
+        for plan_step in action_plan.steps:
+            plan_step.status = "approved"
+        action_plan.status = "approved"
+        envelope.action_plan = action_plan
 
         run_id = self._run_ids.get(envelope.meta.deal_id)
         execution = with_retries(
-            lambda: execution_agent(action_ctx, deal_id=envelope.meta.deal_id, contact_name=envelope.raw_data.get("contact_name", "Prospect"))
+            lambda: execution_agent(action_plan, deal_id=envelope.meta.deal_id, contact_name=envelope.raw_data.get("contact_name", "Prospect"))
         )
         append_or_refine_section(envelope, agent_name="execution_agent", section_value=execution)
         set_stage(envelope, "execution_done")

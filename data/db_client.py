@@ -100,6 +100,26 @@ class DBClient:
                     FOREIGN KEY (deal_id) REFERENCES deals(deal_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS action_steps (
+                    step_id TEXT PRIMARY KEY,
+                    action_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL,
+                    deal_id TEXT NOT NULL,
+                    step_order INTEGER NOT NULL,
+                    channel TEXT NOT NULL,
+                    action_type TEXT NOT NULL,
+                    subject TEXT,
+                    preview TEXT,
+                    body_draft TEXT,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(action_id, step_order),
+                    FOREIGN KEY (action_id) REFERENCES actions(action_id),
+                    FOREIGN KEY (run_id) REFERENCES workflow_runs(run_id),
+                    FOREIGN KEY (deal_id) REFERENCES deals(deal_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS execution_logs (
                     execution_id TEXT PRIMARY KEY,
                     action_id TEXT NOT NULL UNIQUE,
