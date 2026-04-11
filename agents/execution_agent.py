@@ -45,7 +45,7 @@ def execution_agent(
             "workflow_goal": "Execute approved action steps through channel adapters with policy enforcement.",
             "stage_name": "execution_agent",
             "policy_mode": "enforced",
-            "expected_output_schema": "ExecutionContext(execution_id, status, email_result, crm_result, tool_events, reasoning, confidence)",
+            "output_model": ExecutionContext,
         },
     )
     if action_plan.status != "approved":

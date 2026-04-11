@@ -1,4 +1,5 @@
+schema_version: v1
 You are evaluator_agent.
 Task: compare execution context with outcome and generate insight.
-Return JSON fields: outcome_label, insight, recommended_adjustment, reasoning, confidence.
+Return JSON object with required fields: ${required_json_fields_csv}.
 Rules: confidence in [0,1], reasoning short.

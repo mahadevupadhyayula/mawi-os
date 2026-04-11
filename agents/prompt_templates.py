@@ -9,11 +9,22 @@ Implements typed agent logic that consumes context slices and produces determini
 from __future__ import annotations
 
 import json
+from dataclasses import fields, is_dataclass
 from pathlib import Path
+import re
 from string import Template
 from threading import Lock
 from typing import Any, Mapping
 
+from context.models import (
+    CONTEXT_SCHEMA_VERSION,
+    ActionPlanContext,
+    DealContext,
+    DecisionContext,
+    ExecutionContext,
+    OutcomeContext,
+    SignalContext,
+)
 from workflows.registry import DEFAULT_WORKFLOW_NAME, is_known_workflow
 
 PROMPT_DIR = Path(__file__).parent / "prompts"
@@ -23,8 +34,19 @@ REQUIRED_PROMPT_CONTRACT_KEYS = (
     "workflow_goal",
     "stage_name",
     "policy_mode",
-    "expected_output_schema",
 )
+PROMPT_SCHEMA_VERSION = "v1"
+SCHEMA_COMPATIBILITY_MATRIX: dict[str, set[str]] = {
+    "v1": {"v1"},
+}
+PROMPT_OUTPUT_MODELS: dict[str, type] = {
+    "signal_prompt.txt": SignalContext,
+    "context_prompt.txt": DealContext,
+    "strategist_prompt.txt": DecisionContext,
+    "action_prompt.txt": ActionPlanContext,
+    "execution_prompt.txt": ExecutionContext,
+    "evaluator_prompt.txt": OutcomeContext,
+}
 
 _PROMPT_FALLBACK_TELEMETRY: dict[str, int] = {}
 _PROMPT_TELEMETRY_LOCK = Lock()
@@ -66,7 +88,27 @@ def load_prompt(name: str, workflow_id: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _normalize_contract(prompt_contract: Mapping[str, Any] | None) -> dict[str, str]:
+def _required_json_fields(output_model: type) -> list[str]:
+    if not is_dataclass(output_model):
+        raise TypeError(f"output_model must be a dataclass type, got: {output_model!r}")
+    return [field.name for field in fields(output_model) if field.name != "meta"]
+
+
+def _extract_prompt_schema_version(template_text: str, name: str) -> str:
+    match = re.search(r"^schema_version:\s*(\S+)\s*$", template_text, flags=re.MULTILINE)
+    if not match:
+        raise ValueError(f"Prompt template '{name}' must declare a schema version (schema_version: vN).")
+    return match.group(1)
+
+
+def _resolve_output_model(name: str, contract: Mapping[str, Any]) -> type:
+    output_model = contract.get("output_model") or PROMPT_OUTPUT_MODELS.get(name)
+    if output_model is None:
+        raise ValueError(f"Unable to resolve output model for prompt '{name}'.")
+    return output_model
+
+
+def _normalize_contract(name: str, prompt_contract: Mapping[str, Any] | None) -> dict[str, str]:
     contract = dict(prompt_contract or {})
     contract.setdefault("workflow_id", DEFAULT_WORKFLOW_NAME)
     workflow_id = str(contract["workflow_id"])
@@ -81,12 +123,17 @@ def _normalize_contract(prompt_contract: Mapping[str, Any] | None) -> dict[str, 
         missing_csv = ", ".join(sorted(missing))
         raise ValueError(f"prompt contract missing required keys: {missing_csv}")
 
+    output_model = _resolve_output_model(name, contract)
+    required_fields = _required_json_fields(output_model)
+
     normalized: dict[str, str] = {}
     for key, value in contract.items():
-        if key == "expected_output_schema" and isinstance(value, (dict, list, tuple)):
-            normalized[key] = json.dumps(value, sort_keys=True)
-        else:
-            normalized[key] = str(value)
+        normalized[key] = str(value)
+    normalized["prompt_schema_version"] = PROMPT_SCHEMA_VERSION
+    normalized["context_schema_version"] = CONTEXT_SCHEMA_VERSION
+    normalized["output_model"] = output_model.__name__
+    normalized["required_json_fields"] = json.dumps(required_fields)
+    normalized["required_json_fields_csv"] = ", ".join(required_fields)
     return normalized
 
 
@@ -98,13 +145,23 @@ def _contract_header(contract: Mapping[str, str]) -> str:
             f"workflow_goal: {contract['workflow_goal']}",
             f"stage_name: {contract['stage_name']}",
             f"policy_mode: {contract['policy_mode']}",
-            f"expected_output_schema: {contract['expected_output_schema']}",
+            f"prompt_schema_version: {contract['prompt_schema_version']}",
+            f"context_schema_version: {contract['context_schema_version']}",
+            f"output_model: {contract['output_model']}",
+            f"required_json_fields: {contract['required_json_fields']}",
         ]
     )
 
 
 def render_prompt(name: str, *, prompt_contract: Mapping[str, Any] | None = None, **kwargs: str) -> str:
-    contract = _normalize_contract(prompt_contract)
-    template = Template(load_prompt(name, contract["workflow_id"]))
+    contract = _normalize_contract(name, prompt_contract)
+    prompt_text = load_prompt(name, contract["workflow_id"])
+    declared_schema = _extract_prompt_schema_version(prompt_text, name)
+    compatible_context_versions = SCHEMA_COMPATIBILITY_MATRIX.get(declared_schema, set())
+    if CONTEXT_SCHEMA_VERSION not in compatible_context_versions:
+        raise ValueError(
+            f"Prompt schema '{declared_schema}' is not compatible with context schema '{CONTEXT_SCHEMA_VERSION}'."
+        )
+    template = Template(prompt_text)
     rendered_body = template.safe_substitute(**{**contract, **kwargs})
     return f"{_contract_header(contract)}\n\n{rendered_body}"

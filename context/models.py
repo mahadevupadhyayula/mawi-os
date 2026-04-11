@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
+CONTEXT_SCHEMA_VERSION = "v1"
+
 
 ContextStatus = Literal["draft", "pending_approval", "approved", "rejected", "executed", "failed", "partial"]
 
