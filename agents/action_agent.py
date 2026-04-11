@@ -64,19 +64,24 @@ def action_agent(decision_context: DecisionContext, deal_context: DealContext) -
         body_draft=body,
         status="draft",
     )
-    steps = [email_step]
-    if decision_context.strategy_type == "roi_framing":
-        steps.append(
-            ActionStep(
-                step_id=str(uuid4()),
-                order=2,
-                channel="crm",
-                action_type="update_crm",
-                preview="Record ROI-focused follow-up in CRM timeline.",
-                body_draft="Logged ROI framing follow-up and proposed timeline options.",
-                status="draft",
-            )
-        )
+    crm_preview = "Record ROI-focused follow-up in CRM timeline."
+    crm_body = "Logged ROI framing follow-up and proposed timeline options."
+    if decision_context.strategy_type != "roi_framing":
+        crm_preview = "Record sequenced follow-up in CRM timeline."
+        crm_body = "Logged sequenced follow-up and next-step timeline options."
+
+    steps = [
+        email_step,
+        ActionStep(
+            step_id=str(uuid4()),
+            order=2,
+            channel="crm",
+            action_type="update_crm",
+            preview=crm_preview,
+            body_draft=crm_body,
+            status="draft",
+        ),
+    ]
     result = make_result(
         ActionPlanContext(
             plan_id=str(uuid4()),

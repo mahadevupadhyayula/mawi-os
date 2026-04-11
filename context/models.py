@@ -84,6 +84,9 @@ class ActionStep:
     preview: str = ""
     body_draft: str = ""
     status: ContextStatus = "draft"
+    retry_count: int = 0
+    execution_result: Dict[str, Any] = field(default_factory=dict)
+    last_error: str = ""
 
 
 @dataclass

@@ -112,6 +112,9 @@ class DBClient:
                     preview TEXT,
                     body_draft TEXT,
                     status TEXT NOT NULL,
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    execution_result_json TEXT NOT NULL DEFAULT '{}',
+                    last_error TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(action_id, step_order),
@@ -161,5 +164,33 @@ class DBClient:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (source_outcome_id) REFERENCES outcomes(outcome_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS execution_step_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    execution_id TEXT NOT NULL,
+                    action_id TEXT NOT NULL,
+                    step_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL,
+                    deal_id TEXT NOT NULL,
+                    step_order INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    receipt_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(execution_id, step_id),
+                    FOREIGN KEY (execution_id) REFERENCES execution_logs(execution_id),
+                    FOREIGN KEY (action_id) REFERENCES actions(action_id),
+                    FOREIGN KEY (run_id) REFERENCES workflow_runs(run_id),
+                    FOREIGN KEY (deal_id) REFERENCES deals(deal_id)
+                );
                 """
             )
+            self._ensure_column(conn, "action_steps", "retry_count", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "action_steps", "execution_result_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(conn, "action_steps", "last_error", "TEXT NOT NULL DEFAULT ''")
+
+    def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        existing = {str(row["name"]) for row in rows}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")

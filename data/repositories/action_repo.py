@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from context.models import ActionContext, ActionPlanContext, ActionStep
@@ -55,7 +56,8 @@ class ActionRepository:
                     INSERT INTO action_steps (
                         step_id, action_id, run_id, deal_id, step_order, channel, action_type,
                         subject, preview, body_draft, status, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        , retry_count, execution_result_json, last_error
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(step_id) DO UPDATE SET
                         step_order=excluded.step_order,
                         channel=excluded.channel,
@@ -64,6 +66,9 @@ class ActionRepository:
                         preview=excluded.preview,
                         body_draft=excluded.body_draft,
                         status=excluded.status,
+                        retry_count=excluded.retry_count,
+                        execution_result_json=excluded.execution_result_json,
+                        last_error=excluded.last_error,
                         updated_at=excluded.updated_at
                     """,
                     (
@@ -80,26 +85,48 @@ class ActionRepository:
                         step.status,
                         now,
                         now,
+                        step.retry_count,
+                        json.dumps(step.execution_result),
+                        step.last_error,
                     ),
                 )
 
-    def set_approved(self, action_id: str, approver: str) -> None:
+    def set_approved(self, action_id: str, approver: str, step_id: str | None = None) -> None:
         with self.db.tx() as conn:
             conn.execute(
                 "UPDATE actions SET status='approved', approved_by=?, approved_at=?, updated_at=? WHERE action_id=?",
                 (approver, _now(), _now(), action_id),
             )
-            conn.execute("UPDATE action_steps SET status='approved', updated_at=? WHERE action_id=?", (_now(), action_id))
+            if step_id:
+                conn.execute(
+                    "UPDATE action_steps SET status='approved', updated_at=? WHERE action_id=? AND step_id=?",
+                    (_now(), action_id, step_id),
+                )
+            else:
+                conn.execute("UPDATE action_steps SET status='approved', updated_at=? WHERE action_id=?", (_now(), action_id))
 
-    def set_rejected(self, action_id: str, approver: str, reason: str) -> None:
+    def set_rejected(self, action_id: str, approver: str, reason: str, step_id: str | None = None) -> None:
         with self.db.tx() as conn:
             conn.execute(
                 "UPDATE actions SET status='rejected', rejected_by=?, rejected_at=?, rejection_reason=?, updated_at=? WHERE action_id=?",
                 (approver, _now(), reason, _now(), action_id),
             )
-            conn.execute("UPDATE action_steps SET status='rejected', updated_at=? WHERE action_id=?", (_now(), action_id))
+            if step_id:
+                conn.execute(
+                    "UPDATE action_steps SET status='rejected', updated_at=? WHERE action_id=? AND step_id=?",
+                    (_now(), action_id, step_id),
+                )
+            else:
+                conn.execute("UPDATE action_steps SET status='rejected', updated_at=? WHERE action_id=?", (_now(), action_id))
 
-    def set_edited(self, action_id: str, approver: str, preview: str | None, body_draft: str | None) -> None:
+    def set_edited(
+        self,
+        action_id: str,
+        approver: str,
+        preview: str | None,
+        body_draft: str | None,
+        step_id: str | None = None,
+    ) -> None:
         with self.db.tx() as conn:
             conn.execute(
                 """
@@ -112,7 +139,20 @@ class ActionRepository:
                 """,
                 (preview, body_draft, approver, _now(), _now(), action_id),
             )
-            conn.execute("UPDATE action_steps SET status='pending_approval', updated_at=? WHERE action_id=?", (_now(), action_id))
+            if step_id:
+                conn.execute(
+                    """
+                    UPDATE action_steps
+                    SET status='pending_approval',
+                        preview=COALESCE(?, preview),
+                        body_draft=COALESCE(?, body_draft),
+                        updated_at=?
+                    WHERE action_id=? AND step_id=?
+                    """,
+                    (preview, body_draft, _now(), action_id, step_id),
+                )
+            else:
+                conn.execute("UPDATE action_steps SET status='pending_approval', updated_at=? WHERE action_id=?", (_now(), action_id))
 
 
     def get_action(self, action_id: str) -> dict | None:
@@ -139,6 +179,9 @@ class ActionRepository:
                 preview=str(step["preview"] or ""),
                 body_draft=str(step["body_draft"] or ""),
                 status=str(step["status"]),
+                retry_count=int(step["retry_count"] or 0),
+                execution_result=json.loads(step["execution_result_json"] or "{}"),
+                last_error=str(step["last_error"] or ""),
             )
             for step in steps
         ]
