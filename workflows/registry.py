@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from agents.prompt_blocks import block_pack_for_workflow_type, merge_prompt_blocks
+
 from workflows.deal_followup_workflow import WORKFLOW_NAME, WORKFLOW_STEPS
 from workflows.new_deal_outreach_workflow import (
     WORKFLOW_NAME as NEW_DEAL_WORKFLOW_NAME,
@@ -76,3 +78,50 @@ def get_registered_workflow_names() -> list[str]:
 def get_workflow_release_version(name: str | None = None) -> str:
     workflow = get_workflow(name)
     return str(workflow.config.get("release_version", "unversioned"))
+
+
+def register_generated_workflow(
+    *,
+    workflow_id: str,
+    workflow_type: str,
+    steps: list[str] | None = None,
+    trigger: Callable[[dict[str, Any]], bool] | None = None,
+    release_version: str = "generated",
+    block_overrides: dict[str, str] | None = None,
+    example_overrides: tuple[str, ...] | None = None,
+) -> WorkflowMetadata:
+    pack = block_pack_for_workflow_type(workflow_type)
+    assembled_blocks = merge_prompt_blocks(
+        default_blocks=pack.blocks,
+        overrides=block_overrides,
+        extra_examples=example_overrides,
+    )
+    metadata = WorkflowMetadata(
+        workflow_id=workflow_id,
+        steps=steps or list(WORKFLOW_STEPS),
+        trigger=trigger or (lambda _raw: False),
+        config={
+            "release_version": release_version,
+            "workflow_type": pack.workflow_type,
+            "generated_prompt_blocks": [
+                {"block_type": block.block_type, "content": block.content} for block in assembled_blocks
+            ],
+            "max_risk_tier_by_phase": {
+                "default": "medium",
+                "autonomous": "low",
+                "human_review": "medium",
+            },
+        },
+    )
+    WORKFLOW_REGISTRY[workflow_id] = metadata
+    return metadata
+
+
+def get_generated_prompt_blocks(name: str) -> list[dict[str, str]] | None:
+    workflow = WORKFLOW_REGISTRY.get(name)
+    if workflow is None:
+        return None
+    blocks = workflow.config.get("generated_prompt_blocks")
+    if not isinstance(blocks, list) or not blocks:
+        return None
+    return [dict(item) for item in blocks if isinstance(item, dict)]
