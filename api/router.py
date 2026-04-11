@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import JSONResponse
 
 from api.schemas import (
     ActionListResponse,
@@ -12,6 +13,7 @@ from api.schemas import (
     ApproveActionRequest,
     DealStateResponse,
     EditActionRequest,
+    ErrorResponse,
     RejectActionRequest,
     StartWorkflowRequest,
     StartWorkflowResponse,
@@ -25,38 +27,51 @@ _WORKFLOW_ALIASES = {
     "deal-followup": "deal_followup_workflow",
 }
 
-
 _service = WorkflowAPI()
+
+_ERROR_RESPONSES = {
+    status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "Unknown workflow."},
+    status.HTTP_404_NOT_FOUND: {
+        "model": ErrorResponse,
+        "description": "Requested action or deal state could not be found.",
+    },
+}
 
 
 def get_service() -> WorkflowAPI:
     return _service
 
 
+def _error_response(status_code: int, error: str, message: str) -> JSONResponse:
+    return JSONResponse(status_code=status_code, content=ErrorResponse(error=error, message=message).model_dump())
+
+
 def _resolve_workflow_name(workflow: str) -> str:
     resolved = _WORKFLOW_ALIASES.get(workflow, workflow)
     if not is_known_workflow(resolved):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown workflow name: {workflow}",
-        )
+        raise ValueError(f"Unknown workflow name: {workflow}")
     return resolved
 
 
-@router.post("/workflows/start", response_model=StartWorkflowResponse)
+@router.post(
+    "/workflows/start",
+    response_model=StartWorkflowResponse,
+    responses=_ERROR_RESPONSES,
+    summary="Start a workflow run for a deal",
+)
 def start_workflow(
     payload: StartWorkflowRequest,
     workflow: str = Query(default="deal-followup", description="Workflow id or alias"),
     service: WorkflowAPI = Depends(get_service),
-) -> dict[str, Any]:
-    selected_workflow = _resolve_workflow_name(workflow)
+) -> dict[str, Any] | JSONResponse:
     try:
+        selected_workflow = _resolve_workflow_name(workflow)
         return service.start_workflow(payload.deal_id, workflow_name=selected_workflow)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return _error_response(status.HTTP_400_BAD_REQUEST, "unknown_workflow", str(exc))
 
 
-@router.get("/actions", response_model=ActionListResponse)
+@router.get("/actions", response_model=ActionListResponse, summary="List actions by status")
 def get_actions(
     status_filter: str | None = Query(default=None, alias="status"),
     service: WorkflowAPI = Depends(get_service),
@@ -65,13 +80,18 @@ def get_actions(
     return ActionListResponse(actions=actions)
 
 
-@router.post("/actions/approve", response_model=ActionMutationResponse)
+@router.post(
+    "/actions/approve",
+    response_model=ActionMutationResponse,
+    responses=_ERROR_RESPONSES,
+    summary="Approve an action",
+)
 def approve_action(
     payload: ApproveActionRequest,
     service: WorkflowAPI = Depends(get_service),
-) -> dict[str, str]:
-    _ = _resolve_workflow_name(payload.workflow)
+) -> dict[str, str | None] | JSONResponse:
     try:
+        _ = _resolve_workflow_name(payload.workflow)
         return service.approve_action(
             payload.action_id,
             payload.approver,
@@ -79,28 +99,44 @@ def approve_action(
             meeting_booked=payload.meeting_booked,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        message = str(exc)
+        if "Unknown workflow" in message:
+            return _error_response(status.HTTP_400_BAD_REQUEST, "unknown_workflow", message)
+        return _error_response(status.HTTP_404_NOT_FOUND, "action_not_found", message)
 
 
-@router.post("/actions/reject", response_model=ActionMutationResponse)
+@router.post(
+    "/actions/reject",
+    response_model=ActionMutationResponse,
+    responses=_ERROR_RESPONSES,
+    summary="Reject an action",
+)
 def reject_action(
     payload: RejectActionRequest,
     service: WorkflowAPI = Depends(get_service),
-) -> dict[str, str]:
-    _ = _resolve_workflow_name(payload.workflow)
+) -> dict[str, str | None] | JSONResponse:
     try:
+        _ = _resolve_workflow_name(payload.workflow)
         return service.reject_action(payload.action_id, payload.approver, payload.reason)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        message = str(exc)
+        if "Unknown workflow" in message:
+            return _error_response(status.HTTP_400_BAD_REQUEST, "unknown_workflow", message)
+        return _error_response(status.HTTP_404_NOT_FOUND, "action_not_found", message)
 
 
-@router.post("/actions/edit", response_model=ActionMutationResponse)
+@router.post(
+    "/actions/edit",
+    response_model=ActionMutationResponse,
+    responses=_ERROR_RESPONSES,
+    summary="Edit an action and reset it to pending approval",
+)
 def edit_action(
     payload: EditActionRequest,
     service: WorkflowAPI = Depends(get_service),
-) -> dict[str, str]:
-    _ = _resolve_workflow_name(payload.workflow)
+) -> dict[str, str | None] | JSONResponse:
     try:
+        _ = _resolve_workflow_name(payload.workflow)
         return service.edit_action(
             payload.action_id,
             payload.approver,
@@ -108,12 +144,20 @@ def edit_action(
             body_draft=payload.body_draft,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        message = str(exc)
+        if "Unknown workflow" in message:
+            return _error_response(status.HTTP_400_BAD_REQUEST, "unknown_workflow", message)
+        return _error_response(status.HTTP_404_NOT_FOUND, "action_not_found", message)
 
 
-@router.get("/deals/{deal_id}", response_model=DealStateResponse)
-def get_deal_state(deal_id: str, service: WorkflowAPI = Depends(get_service)) -> dict[str, Any]:
+@router.get(
+    "/deals/{deal_id}",
+    response_model=DealStateResponse,
+    responses=_ERROR_RESPONSES,
+    summary="Fetch latest known state for a deal",
+)
+def get_deal_state(deal_id: str, service: WorkflowAPI = Depends(get_service)) -> dict[str, Any] | JSONResponse:
     try:
         return service.get_deal_state(deal_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return _error_response(status.HTTP_404_NOT_FOUND, "deal_state_not_found", str(exc))

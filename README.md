@@ -234,17 +234,34 @@ This runs the local demo workflow end-to-end, including approval/resume behavior
 
 ### Web API Adapter (FastAPI)
 
-MAWI now includes a thin web transport adapter in `api/router.py` that maps directly to `WorkflowAPI` service methods in `api/service.py` without changing service logic.
+MAWI includes a thin web transport adapter in `api/router.py` that maps directly to `WorkflowAPI` service methods in `api/service.py`.
 
 #### Endpoint Contracts
 
 Base router prefix: `/api`
 
+#### Error Model
+
+When a workflow, action, or deal state cannot be resolved, endpoints return a consistent JSON error payload:
+
+```json
+{
+  "error": "unknown_workflow",
+  "message": "Unknown workflow name: foo"
+}
+```
+
+Known error values:
+
+- `unknown_workflow` (HTTP 400)
+- `action_not_found` (HTTP 404)
+- `deal_state_not_found` (HTTP 404)
+
 1) **Start workflow**
 
 - **POST** `/api/workflows/start?workflow=deal-followup`
-- **Default workflow selector:** `deal-followup`
-- **Supported selector values:** `deal-followup` (alias) or registered workflow IDs (for example `deal_followup_workflow`)
+- **Maps to:** `WorkflowAPI.start_workflow(deal_id, workflow_name=...)`
+- **Workflow validation:** query value is alias-resolved then checked with `is_known_workflow`.
 - **Request body:**
 
 ```json
@@ -253,12 +270,21 @@ Base router prefix: `/api`
 }
 ```
 
-- **Response body:** context envelope dictionary returned by `WorkflowAPI.start_workflow`.
+- **Success response (200):** full context envelope dictionary from `WorkflowAPI.start_workflow`.
+- **Error example (400):**
+
+```json
+{
+  "error": "unknown_workflow",
+  "message": "Unknown workflow name: invalid-workflow"
+}
+```
 
 2) **List actions**
 
 - **GET** `/api/actions?status=pending_approval`
-- **Response body:**
+- **Maps to:** `WorkflowAPI.get_actions(status=...)`
+- **Success response (200):**
 
 ```json
 {
@@ -274,6 +300,8 @@ Base router prefix: `/api`
 3) **Approve action**
 
 - **POST** `/api/actions/approve`
+- **Maps to:** `WorkflowAPI.approve_action(...)`
+- **Workflow validation:** body field `workflow` must resolve to a known workflow.
 - **Request body:**
 
 ```json
@@ -286,11 +314,30 @@ Base router prefix: `/api`
 }
 ```
 
-- **Response body:** `{ "status": "approved", "deal_id": "...", "action_id": "..." }`
+- **Success response (200):**
+
+```json
+{
+  "status": "approved",
+  "deal_id": "deal_123",
+  "action_id": "act_1"
+}
+```
+
+- **Error example (404):**
+
+```json
+{
+  "error": "action_not_found",
+  "message": "Action not found"
+}
+```
 
 4) **Reject action**
 
 - **POST** `/api/actions/reject`
+- **Maps to:** `WorkflowAPI.reject_action(...)`
+- **Workflow validation:** body field `workflow` must resolve to a known workflow.
 - **Request body:**
 
 ```json
@@ -302,11 +349,22 @@ Base router prefix: `/api`
 }
 ```
 
-- **Response body:** `{ "status": "rejected", "deal_id": "...", "action_id": "...", "reason": "..." }`
+- **Success response (200):**
+
+```json
+{
+  "status": "rejected",
+  "deal_id": "deal_123",
+  "action_id": "act_1",
+  "reason": "Tone is too aggressive"
+}
+```
 
 5) **Edit action**
 
 - **POST** `/api/actions/edit`
+- **Maps to:** `WorkflowAPI.edit_action(...)`
+- **Workflow validation:** body field `workflow` must resolve to a known workflow.
 - **Request body:**
 
 ```json
@@ -319,12 +377,29 @@ Base router prefix: `/api`
 }
 ```
 
-- **Response body:** `{ "status": "edited", "deal_id": "...", "action_id": "..." }`
+- **Success response (200):**
+
+```json
+{
+  "status": "edited",
+  "deal_id": "deal_123",
+  "action_id": "act_1"
+}
+```
 
 6) **Get deal state**
 
 - **GET** `/api/deals/{deal_id}`
-- **Response body:** context envelope dictionary returned by `WorkflowAPI.get_deal_state`.
+- **Maps to:** `WorkflowAPI.get_deal_state(deal_id)`
+- **Success response (200):** full context envelope dictionary.
+- **Error example (404):**
+
+```json
+{
+  "error": "deal_state_not_found",
+  "message": "Deal state not found"
+}
+```
 
 ---
 
