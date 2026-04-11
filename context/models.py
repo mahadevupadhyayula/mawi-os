@@ -59,6 +59,9 @@ class DecisionContext(SectionBase):
     strategy_type: str = ""
     message_goal: str = ""
     fallback_strategy: str = ""
+    memory_evidence_used: List[Dict[str, Any]] = field(default_factory=list)
+    memory_confidence_impact: float = 0.0
+    memory_rationale: str = ""
 
 
 @dataclass
