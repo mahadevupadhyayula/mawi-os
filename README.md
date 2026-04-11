@@ -62,6 +62,18 @@ Primary objective:
 - simulated execution through tools
 - post-action evaluation and memory write-back
 
+### Definition of Implemented (MVP)
+
+A workflow is considered **Implemented** only when all of the following are present:
+
+1. **Trigger** — concrete event/signal detection exists.
+2. **Orchestration** — workflow is sequenced by the orchestrator.
+3. **Execution** — at least one action/tool path is runnable.
+4. **Evaluation** — outcomes are analyzed/scored after execution.
+5. **Persistence** — state/outcomes are persisted for resume/audit.
+
+If one or more criteria are incomplete, the workflow is **Partial**.
+
 ### Explicitly Out of Scope (for MVP)
 
 - full autonomous no-approval mode
@@ -114,6 +126,17 @@ Primary objective:
 - capture execution + reply outcomes
 - generate initial insights
 - persist insights to memory stores
+
+## ✅ Current Implemented Workflows
+
+Only workflows with code currently present in this repository are listed here.
+
+- **SaaS Sales Deal Follow-up Execution** — **Implemented** (MVP target).
+  - Workflow definition: [`workflows/deal_followup_workflow.py`](./workflows/deal_followup_workflow.py)
+  - Trigger + registry wiring: [`workflows/triggers.py`](./workflows/triggers.py), [`workflows/registry.py`](./workflows/registry.py)
+  - Orchestration runner: [`orchestrator/runner.py`](./orchestrator/runner.py)
+
+- **All other named roadmap workflows** — **Not Implemented yet** (tracked in [`BACKLOG.md`](./BACKLOG.md)).
 
 ---
 
