@@ -1,0 +1,67 @@
+{
+  "signal_prompt.txt": {
+    "reasoning": "Detected inactivity above threshold.",
+    "confidence": 0.9,
+    "stalled": true,
+    "days_since_reply": 8,
+    "urgency": "high",
+    "trigger_reason": "No response in over one week."
+  },
+  "context_prompt.txt": {
+    "reasoning": "Persona and objections synthesized from CRM notes.",
+    "confidence": 0.81,
+    "persona": "VP Sales",
+    "deal_stage": "evaluation",
+    "known_objections": ["budget", "security"],
+    "recent_timeline": ["Intro call complete", "Security review requested"],
+    "recommended_tone": "consultative"
+  },
+  "strategist_prompt.txt": {
+    "reasoning": "Recommend value reminder with low-friction CTA.",
+    "confidence": 0.77,
+    "strategy_id": "strat_value_recap",
+    "strategy_type": "value_reinforcement",
+    "message_goal": "Restart conversation and schedule follow-up.",
+    "fallback_strategy": "share_customer_story",
+    "memory_evidence_used": [{"source": "outcome_repo", "note": "case studies help"}],
+    "memory_confidence_impact": 0.12,
+    "memory_rationale": "Historical wins for similar stage/deal size."
+  },
+  "action_prompt.txt": {
+    "reasoning": "Constructed a single-step outbound plan.",
+    "confidence": 0.84,
+    "plan_id": "plan_123",
+    "steps": [
+      {
+        "step_id": "step_1",
+        "order": 1,
+        "channel": "email",
+        "action_type": "send_email",
+        "subject": "Quick next-step check-in",
+        "preview": "Can we align on next steps?",
+        "body_draft": "Would Tuesday work for a 15-minute follow-up?",
+        "status": "draft",
+        "retry_count": 0,
+        "execution_result": {},
+        "last_error": ""
+      }
+    ],
+    "status": "draft"
+  },
+  "execution_prompt.txt": {
+    "reasoning": "Execution completed with outbound + CRM sync.",
+    "confidence": 0.74,
+    "execution_id": "exec_123",
+    "status": "executed",
+    "email_result": {"sent": true},
+    "crm_result": {"updated": true},
+    "tool_events": [{"tool": "email", "status": "ok"}]
+  },
+  "evaluator_prompt.txt": {
+    "reasoning": "Outcome indicates improved engagement.",
+    "confidence": 0.72,
+    "outcome_label": "positive_engagement",
+    "insight": "Prospect requested a follow-up demo.",
+    "recommended_adjustment": "Repeat concise CTA format in next sequence."
+  }
+}

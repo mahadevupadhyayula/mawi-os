@@ -1,0 +1,46 @@
+[
+  {
+    "scenario": "deal_followup_triggered",
+    "raw_data": {
+      "deal_id": "D-100",
+      "days_since_reply": 8,
+      "outbound_count": 2,
+      "has_prior_outbound": true
+    },
+    "expected": {
+      "deal_followup_workflow": true,
+      "new_deal_outreach_workflow": false
+    }
+  },
+  {
+    "scenario": "new_deal_outreach_triggered",
+    "raw_data": {
+      "deal_id": "D-200",
+      "days_since_reply": 0,
+      "outbound_count": 0,
+      "has_prior_outbound": false,
+      "last_outbound_at": null,
+      "last_outbound_summary": "",
+      "last_outbound_message_id": null,
+      "prior_outreach_sent": false
+    },
+    "expected": {
+      "deal_followup_workflow": false,
+      "new_deal_outreach_workflow": true
+    }
+  },
+  {
+    "scenario": "no_workflow_triggered",
+    "raw_data": {
+      "deal_id": "D-300",
+      "days_since_reply": 2,
+      "outbound_count": 1,
+      "has_prior_outbound": true,
+      "last_outbound_at": "2026-04-01T10:00:00Z"
+    },
+    "expected": {
+      "deal_followup_workflow": false,
+      "new_deal_outreach_workflow": false
+    }
+  }
+]
