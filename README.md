@@ -168,6 +168,19 @@ Design rule:
 
 ---
 
+
+## 🗄️ Data Layer
+
+MAWI includes a persistent data layer for MVP operations to:
+
+- track workflow state across restarts
+- store actions, approvals, execution logs, and outcomes
+- persist context envelope snapshots for resume/debug
+
+Current implementation uses a local SQL store for out-of-the-box execution and repository abstractions that can be upgraded to PostgreSQL/JSONB in production.
+
+---
+
 ## 🚀 Future Development Goals
 
 ### Phase 2 — Deal Intelligence System
