@@ -9,7 +9,9 @@ Handles sequencing, retries, and auditability while delegating domain decisions 
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict
+from typing import Callable, TypeVar
 
 from agents.action_agent import action_agent
 from agents.context_agent import context_agent
@@ -22,8 +24,9 @@ from approval.policy import requires_approval
 from approval.queue import ApprovalQueue
 from context.envelope import append_or_refine_section, set_stage
 from context.models import ActionContext, ActionPlanContext, ActionStep, ContextEnvelope, MetaContext
-from data.models import RUN_STATUS_COMPLETED, RUN_STATUS_RUNNING, RUN_STATUS_SKIPPED, RUN_STATUS_WAITING_APPROVAL
+from data.models import RUN_STATUS_COMPLETED, RUN_STATUS_FAILED, RUN_STATUS_RUNNING, RUN_STATUS_SKIPPED, RUN_STATUS_WAITING_APPROVAL
 from data.repositories import ActionRepository, OutcomeRepository, WorkflowRepository
+from evaluation.metrics import WorkflowPathMetrics
 from memory.long_term_store import LongTermMemory
 from memory.memory_models import OutcomeRecord
 from memory.retrieval import retrieve_persona_evidence
@@ -32,6 +35,8 @@ from orchestrator.audit_logger import log_step
 from orchestrator.retry_policy import with_retries
 from tools.deal_tool import fetch_deal_data
 from workflows.registry import get_workflow
+
+T = TypeVar("T")
 
 
 def _memory_influence_summary(envelope: ContextEnvelope) -> str:
@@ -57,7 +62,83 @@ class WorkflowOrchestrator:
         self.workflow_repo = WorkflowRepository()
         self.action_repo = ActionRepository()
         self.outcome_repo = OutcomeRepository()
+        self.path_metrics = WorkflowPathMetrics()
         self._run_ids: dict[str, str] = {}
+
+    def _update_run_status(
+        self,
+        run_id: str,
+        stage: str,
+        status: str,
+        *,
+        last_error: str | None = None,
+        complete: bool = False,
+    ) -> None:
+        self.workflow_repo.update_run(run_id, stage, status, last_error=last_error, complete=complete)
+        self.path_metrics.increment(status)
+
+    def _serialize_error(self, workflow_id: str, step: str, retry_count: int, error: Exception) -> str:
+        return json.dumps(
+            {
+                "workflow_id": workflow_id,
+                "step": step,
+                "retry_count": retry_count,
+                "error_class": error.__class__.__name__,
+                "message": str(error),
+                "terminal": bool(getattr(error, "terminal_retry_error", False)),
+            },
+            sort_keys=True,
+        )
+
+    def _execute_with_step_audit(
+        self,
+        *,
+        workflow_id: str,
+        step: str,
+        fn: Callable[[], T],
+        retries: int = 2,
+        backoff_seconds: float | None = 0.1,
+        terminal_error_classes: tuple[type[Exception], ...] | None = (ValueError, TypeError),
+    ) -> T:
+        retry_count = 0
+        started = time.perf_counter()
+        def _capture_retry(attempt: int, _exc: Exception, _delay: float) -> None:
+            nonlocal retry_count
+            retry_count = attempt
+
+        try:
+            result = with_retries(
+                fn,
+                retries=retries,
+                backoff_seconds=backoff_seconds,
+                terminal_error_classes=terminal_error_classes,
+                on_retry=_capture_retry,
+            )
+            return result
+        except Exception as exc:  # noqa: BLE001
+            duration_ms = int((time.perf_counter() - started) * 1000)
+            log_step(
+                step,
+                "Step execution failed.",
+                workflow_id=workflow_id,
+                step_name=step,
+                duration_ms=duration_ms,
+                retry_count=retry_count,
+                error_class=exc.__class__.__name__,
+            )
+            raise
+        finally:
+            if "result" in locals():
+                duration_ms = int((time.perf_counter() - started) * 1000)
+                log_step(
+                    step,
+                    "Step execution completed.",
+                    workflow_id=workflow_id,
+                    step_name=step,
+                    duration_ms=duration_ms,
+                    retry_count=retry_count,
+                    error_class=None,
+                )
 
     def _snapshot(self, deal_id: str, envelope: ContextEnvelope, source_agent: str | None = None) -> None:
         run_id = self._run_ids.get(deal_id)
@@ -76,35 +157,43 @@ class WorkflowOrchestrator:
         if not workflow.trigger(raw):
             set_stage(envelope, "initialized")
             log_step("trigger", f"Deal did not meet trigger criteria for {workflow.workflow_id}; workflow skipped.")
-            self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_SKIPPED, complete=True)
+            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_SKIPPED, complete=True)
             self._snapshot(deal_id, envelope, source_agent="trigger")
             return envelope
 
-        for step in workflow.steps:
-            should_continue = self._execute_workflow_step(step, deal_id, run_id, envelope)
-            if not should_continue:
-                break
+        try:
+            for step in workflow.steps:
+                should_continue = self._execute_workflow_step(workflow.workflow_id, step, deal_id, run_id, envelope)
+                if not should_continue:
+                    break
+        except Exception as exc:  # noqa: BLE001
+            payload = self._serialize_error(workflow.workflow_id, envelope.meta.workflow_stage, 0, exc)
+            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_FAILED, last_error=payload, complete=True)
+            self._snapshot(deal_id, envelope, source_agent="system")
+            raise
 
         self.short_memory.save(deal_id, envelope)
         return envelope
 
-    def _execute_workflow_step(self, step: str, deal_id: str, run_id: str, envelope: ContextEnvelope) -> bool:
+    def _execute_workflow_step(self, workflow_id: str, step: str, deal_id: str, run_id: str, envelope: ContextEnvelope) -> bool:
         if step == "signal_agent":
-            signal = with_retries(lambda: signal_agent(envelope.raw_data))
+            signal = self._execute_with_step_audit(workflow_id=workflow_id, step=step, fn=lambda: signal_agent(envelope.raw_data))
             append_or_refine_section(envelope, agent_name="signal_agent", section_value=signal)
             set_stage(envelope, "signal_done")
-            self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
             self._snapshot(deal_id, envelope, source_agent="signal_agent")
-            log_step("signal_agent", "Signal context generated.")
             return True
 
         if step == "context_agent":
-            deal = with_retries(lambda: context_agent(envelope.raw_data, envelope.signal_context))
+            deal = self._execute_with_step_audit(
+                workflow_id=workflow_id,
+                step=step,
+                fn=lambda: context_agent(envelope.raw_data, envelope.signal_context),
+            )
             append_or_refine_section(envelope, agent_name="context_agent", section_value=deal)
             set_stage(envelope, "context_done")
-            self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
             self._snapshot(deal_id, envelope, source_agent="context_agent")
-            log_step("context_agent", "Deal context generated.")
             return True
 
         if step == "strategist_agent":
@@ -115,12 +204,15 @@ class WorkflowOrchestrator:
                 persona=persona,
             )
             envelope.raw_data["memory_inputs_strategist"] = memory_evidence
-            decision = with_retries(lambda: strategist_agent(envelope.signal_context, envelope.deal_context, memory_evidence))
+            decision = self._execute_with_step_audit(
+                workflow_id=workflow_id,
+                step=step,
+                fn=lambda: strategist_agent(envelope.signal_context, envelope.deal_context, memory_evidence),
+            )
             append_or_refine_section(envelope, agent_name="strategist_agent", section_value=decision)
             set_stage(envelope, "strategy_done")
-            self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
             self._snapshot(deal_id, envelope, source_agent="strategist_agent")
-            log_step("strategist_agent", "Decision context generated.")
             return True
 
         if step == "action_agent":
@@ -131,7 +223,11 @@ class WorkflowOrchestrator:
                 persona=persona,
             )
             envelope.raw_data["memory_inputs_action"] = memory_evidence
-            action_plan = with_retries(lambda: action_agent(envelope.decision_context, envelope.deal_context))
+            action_plan = self._execute_with_step_audit(
+                workflow_id=workflow_id,
+                step=step,
+                fn=lambda: action_agent(envelope.decision_context, envelope.deal_context),
+            )
             if not action_plan.steps:
                 raise ValueError("action_agent returned an empty action plan")
             first_step = sorted(action_plan.steps, key=lambda item: item.order)[0]
@@ -153,16 +249,14 @@ class WorkflowOrchestrator:
                 action.status = "pending_approval"
                 self.queue.enqueue(asdict(action))
                 set_stage(envelope, "waiting_approval")
-                self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_WAITING_APPROVAL)
-                log_step("action_agent", "Action routed to approval queue.")
+                self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_WAITING_APPROVAL)
             else:
                 action_plan.status = "approved"
                 for plan_step in action_plan.steps:
                     plan_step.status = "approved"
                 action.status = "approved"
                 set_stage(envelope, "action_done")
-                self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
-                log_step("action_agent", "Action auto-approved by policy.")
+                self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
 
             append_or_refine_section(envelope, agent_name="action_agent", section_value=action)
             envelope.action_plan = action_plan
@@ -226,19 +320,40 @@ class WorkflowOrchestrator:
             if action_plan.steps and all(step.status == "executed" for step in action_plan.steps):
                 return envelope
 
-        execution = with_retries(
-            lambda: execution_agent(action_plan, deal_id=envelope.meta.deal_id, contact_name=envelope.raw_data.get("contact_name", "Prospect"))
-        )
+        try:
+            execution = self._execute_with_step_audit(
+                workflow_id="resume_after_approval",
+                step="execution_agent",
+                fn=lambda: execution_agent(
+                    action_plan,
+                    deal_id=envelope.meta.deal_id,
+                    contact_name=envelope.raw_data.get("contact_name", "Prospect"),
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            if run_id:
+                payload = self._serialize_error("resume_after_approval", "execution_agent", 0, exc)
+                self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_FAILED, last_error=payload, complete=True)
+            raise
         append_or_refine_section(envelope, agent_name="execution_agent", section_value=execution)
         set_stage(envelope, "execution_done")
         if run_id:
             self.outcome_repo.record_execution(run_id, envelope.meta.deal_id, action_ctx.action_id, execution)
             self.action_repo.upsert_action_plan(run_id, envelope.meta.deal_id, action_ctx.action_id, action_plan)
-            self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
             self._snapshot(envelope.meta.deal_id, envelope, source_agent="execution_agent")
-        log_step("execution_agent", f"Execution status={execution.status}")
 
-        outcome_ctx = with_retries(lambda: evaluator_agent(execution, outcome))
+        try:
+            outcome_ctx = self._execute_with_step_audit(
+                workflow_id="resume_after_approval",
+                step="evaluator_agent",
+                fn=lambda: evaluator_agent(execution, outcome),
+            )
+        except Exception as exc:  # noqa: BLE001
+            if run_id:
+                payload = self._serialize_error("resume_after_approval", "evaluator_agent", 0, exc)
+                self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_FAILED, last_error=payload, complete=True)
+            raise
         append_or_refine_section(envelope, agent_name="evaluator_agent", section_value=outcome_ctx)
         set_stage(envelope, "evaluation_done")
         if run_id:
@@ -246,9 +361,8 @@ class WorkflowOrchestrator:
             persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
             memory_insight = f"{outcome_ctx.insight} | {_memory_influence_summary(envelope)}"
             self.outcome_repo.add_persona_insight(persona, memory_insight, outcome_ctx.confidence)
-            self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_COMPLETED, complete=True)
+            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_COMPLETED, complete=True)
             self._snapshot(envelope.meta.deal_id, envelope, source_agent="evaluator_agent")
-        log_step("evaluator_agent", f"Outcome label={outcome_ctx.outcome_label}")
 
         self.long_memory.add_outcome(
             OutcomeRecord(

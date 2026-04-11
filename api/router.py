@@ -15,6 +15,7 @@ from api.schemas import (
     EditActionRequest,
     ErrorResponse,
     RejectActionRequest,
+    RunSummaryResponse,
     StartWorkflowRequest,
     StartWorkflowResponse,
 )
@@ -161,3 +162,20 @@ def get_deal_state(deal_id: str, service: WorkflowAPI = Depends(get_service)) ->
         return service.get_deal_state(deal_id)
     except ValueError as exc:
         return _error_response(status.HTTP_404_NOT_FOUND, "deal_state_not_found", str(exc))
+
+
+@router.get(
+    "/runs/summary",
+    response_model=RunSummaryResponse,
+    responses=_ERROR_RESPONSES,
+    summary="Fetch a run summary by run_id or latest run for deal_id",
+)
+def get_run_summary(
+    deal_id: str | None = Query(default=None),
+    run_id: str | None = Query(default=None),
+    service: WorkflowAPI = Depends(get_service),
+) -> dict[str, Any] | JSONResponse:
+    try:
+        return service.get_run_summary(deal_id=deal_id, run_id=run_id)
+    except ValueError as exc:
+        return _error_response(status.HTTP_404_NOT_FOUND, "run_summary_not_found", str(exc))
