@@ -5,6 +5,7 @@ from agents.prompt_templates import (
     PromptLintError,
     generate_prompt_health_report,
     get_prompt_fallback_telemetry,
+    load_prompt_manifest,
     render_prompt,
     validate_prompt_health_report,
 )
@@ -133,6 +134,15 @@ class TestPromptContracts(unittest.TestCase):
         self.assertEqual(report["summary"]["failed"], 0)
         self.assertGreater(report["summary"]["total"], 0)
         validate_prompt_health_report(report)
+
+    def test_prompt_manifest_registry_includes_governance_fields(self) -> None:
+        manifest = load_prompt_manifest()
+        self.assertIn("prompt_registry_index", manifest)
+        self.assertGreater(len(manifest["prompt_registry_index"]), 0)
+        first_entry = manifest["prompt_registry_index"][0]
+        self.assertIn(first_entry["status"], {"draft", "active", "deprecated"})
+        self.assertTrue(first_entry["owner"])
+        self.assertTrue(first_entry["changelog"])
 
 
 if __name__ == "__main__":

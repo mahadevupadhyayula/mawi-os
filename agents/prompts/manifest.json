@@ -1,17 +1,106 @@
 {
-  "manifest_version": "1.0.0",
+  "manifest_version": "1.1.0",
   "profiles": {
     "common": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Default prompt templates used when a workflow-specific profile is unavailable."
     },
     "deal_followup_workflow": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Prompt profile for stalled-deal follow-up workflows."
     },
     "new_deal_outreach_workflow": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Prompt profile for new-deal outreach workflows."
     }
-  }
+  },
+  "prompt_registry_index": [
+    {
+      "prompt_id": "common.signal_prompt",
+      "workflow_id": "deal_followup_workflow",
+      "version": "1.1.0",
+      "owner": "prompt-governance@mawi",
+      "status": "active",
+      "workflow_release_version": "2026.04.1",
+      "changelog": [
+        {
+          "version": "1.1.0",
+          "date": "2026-04-11",
+          "summary": "Added governance metadata and release binding."
+        }
+      ]
+    },
+    {
+      "prompt_id": "common.context_prompt",
+      "workflow_id": "deal_followup_workflow",
+      "version": "1.1.0",
+      "owner": "prompt-governance@mawi",
+      "status": "active",
+      "workflow_release_version": "2026.04.1",
+      "changelog": [{"version": "1.1.0", "date": "2026-04-11", "summary": "Governance index entry created."}]
+    },
+    {
+      "prompt_id": "common.strategist_prompt",
+      "workflow_id": "deal_followup_workflow",
+      "version": "1.1.0",
+      "owner": "prompt-governance@mawi",
+      "status": "active",
+      "workflow_release_version": "2026.04.1",
+      "changelog": [{"version": "1.1.0", "date": "2026-04-11", "summary": "Governance index entry created."}]
+    },
+    {
+      "prompt_id": "common.action_prompt",
+      "workflow_id": "deal_followup_workflow",
+      "version": "1.1.0",
+      "owner": "prompt-governance@mawi",
+      "status": "active",
+      "workflow_release_version": "2026.04.1",
+      "changelog": [{"version": "1.1.0", "date": "2026-04-11", "summary": "Governance index entry created."}]
+    },
+    {
+      "prompt_id": "common.execution_prompt",
+      "workflow_id": "deal_followup_workflow",
+      "version": "1.1.0",
+      "owner": "prompt-governance@mawi",
+      "status": "active",
+      "workflow_release_version": "2026.04.1",
+      "changelog": [{"version": "1.1.0", "date": "2026-04-11", "summary": "Governance index entry created."}]
+    },
+    {
+      "prompt_id": "common.evaluator_prompt",
+      "workflow_id": "deal_followup_workflow",
+      "version": "1.1.0",
+      "owner": "prompt-governance@mawi",
+      "status": "active",
+      "workflow_release_version": "2026.04.1",
+      "changelog": [{"version": "1.1.0", "date": "2026-04-11", "summary": "Governance index entry created."}]
+    },
+    {
+      "prompt_id": "new_deal_outreach.signal_prompt",
+      "workflow_id": "new_deal_outreach_workflow",
+      "version": "1.1.0",
+      "owner": "prompt-governance@mawi",
+      "status": "active",
+      "workflow_release_version": "2026.04.1",
+      "changelog": [{"version": "1.1.0", "date": "2026-04-11", "summary": "Governance index entry created."}]
+    },
+    {
+      "prompt_id": "new_deal_outreach.context_prompt",
+      "workflow_id": "new_deal_outreach_workflow",
+      "version": "1.1.0",
+      "owner": "prompt-governance@mawi",
+      "status": "draft",
+      "workflow_release_version": "2026.04.1",
+      "changelog": [{"version": "1.1.0", "date": "2026-04-11", "summary": "Draft prompt placeholder for workflow specific profile."}]
+    },
+    {
+      "prompt_id": "legacy.followup.action_prompt",
+      "workflow_id": "deal_followup_workflow",
+      "version": "0.9.0",
+      "owner": "prompt-governance@mawi",
+      "status": "deprecated",
+      "workflow_release_version": "2026.04.1",
+      "changelog": [{"version": "0.9.0", "date": "2026-01-03", "summary": "Deprecated in favor of contract-first prompt set."}]
+    }
+  ]
 }

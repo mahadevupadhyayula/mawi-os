@@ -28,7 +28,12 @@ from context.models import (
     OutcomeContext,
     SignalContext,
 )
-from workflows.registry import DEFAULT_WORKFLOW_NAME, get_registered_workflow_names, is_known_workflow
+from workflows.registry import (
+    DEFAULT_WORKFLOW_NAME,
+    get_registered_workflow_names,
+    get_workflow_release_version,
+    is_known_workflow,
+)
 from data.repositories import PromptDiagnosticsRepository
 
 PROMPT_DIR = Path(__file__).parent / "prompts"
@@ -89,8 +94,41 @@ def get_prompt_fallback_telemetry() -> dict[str, int]:
         return dict(_PROMPT_FALLBACK_TELEMETRY)
 
 
+def _validate_prompt_registry_manifest(manifest: Mapping[str, Any]) -> None:
+    registry = manifest.get("prompt_registry_index")
+    if not isinstance(registry, list) or not registry:
+        raise ValueError("Prompt manifest must include a non-empty prompt_registry_index list.")
+
+    for entry in registry:
+        prompt_id = str(entry.get("prompt_id", ""))
+        if not prompt_id:
+            raise ValueError("Prompt registry entries must include prompt_id.")
+        if str(entry.get("status", "")) not in {"draft", "active", "deprecated"}:
+            raise ValueError(f"Prompt registry entry '{prompt_id}' has invalid status.")
+        if not str(entry.get("owner", "")):
+            raise ValueError(f"Prompt registry entry '{prompt_id}' must include an owner.")
+        if not str(entry.get("version", "")):
+            raise ValueError(f"Prompt registry entry '{prompt_id}' must include a version.")
+
+        changelog = entry.get("changelog")
+        if not isinstance(changelog, list) or not changelog:
+            raise ValueError(f"Prompt registry entry '{prompt_id}' must include changelog entries.")
+
+        workflow_id = str(entry.get("workflow_id", ""))
+        release_version = str(entry.get("workflow_release_version", ""))
+        if workflow_id and is_known_workflow(workflow_id):
+            expected_release = get_workflow_release_version(workflow_id)
+            if release_version != expected_release:
+                raise ValueError(
+                    f"Prompt registry entry '{prompt_id}' release mismatch: "
+                    f"expected workflow release version '{expected_release}', got '{release_version}'."
+                )
+
+
 def load_prompt_manifest() -> dict[str, Any]:
-    return json.loads(PROMPT_MANIFEST_PATH.read_text(encoding="utf-8"))
+    manifest = json.loads(PROMPT_MANIFEST_PATH.read_text(encoding="utf-8"))
+    _validate_prompt_registry_manifest(manifest)
+    return manifest
 
 
 def _resolve_prompt_path(name: str, workflow_id: str) -> tuple[Path, str, bool]:

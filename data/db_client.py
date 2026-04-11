@@ -239,6 +239,9 @@ class DBClient:
                     degradation_execution_threshold REAL NOT NULL DEFAULT 0.05,
                     degradation_rejection_threshold REAL NOT NULL DEFAULT 0.05,
                     promoted_default_variant TEXT NOT NULL DEFAULT 'A',
+                    active_release_id TEXT NOT NULL DEFAULT '',
+                    previous_stable_release_id TEXT NOT NULL DEFAULT '',
+                    workflow_release_version TEXT NOT NULL DEFAULT 'unversioned',
                     updated_at TEXT NOT NULL
                 );
 
@@ -263,11 +266,36 @@ class DBClient:
                     note TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS prompt_release_sets (
+                    release_id TEXT PRIMARY KEY,
+                    workflow_id TEXT NOT NULL,
+                    workflow_release_version TEXT NOT NULL,
+                    prompt_profile_version TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    owner TEXT NOT NULL,
+                    changelog_note TEXT NOT NULL,
+                    previous_stable_release_id TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS prompt_promotion_approvals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    workflow_id TEXT NOT NULL,
+                    release_id TEXT NOT NULL,
+                    approver TEXT NOT NULL,
+                    decision TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 """
             )
             self._ensure_column(conn, "action_steps", "retry_count", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "action_steps", "execution_result_json", "TEXT NOT NULL DEFAULT '{}'")
             self._ensure_column(conn, "action_steps", "last_error", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "prompt_variant_rollouts", "active_release_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "prompt_variant_rollouts", "previous_stable_release_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "prompt_variant_rollouts", "workflow_release_version", "TEXT NOT NULL DEFAULT 'unversioned'")
 
     def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
         rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
