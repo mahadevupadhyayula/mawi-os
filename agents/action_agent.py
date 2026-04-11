@@ -44,7 +44,13 @@ def _subject_and_preview(decision_context: DecisionContext) -> tuple[str, str]:
     )
 
 
-def action_agent(decision_context: DecisionContext, deal_context: DealContext) -> ActionPlanContext:
+def action_agent(
+    decision_context: DecisionContext,
+    deal_context: DealContext,
+    *,
+    workflow_id: str = "deal_followup_workflow",
+    run_id: str | None = None,
+) -> ActionPlanContext:
     _ = render_prompt(
         "action_prompt.txt",
         prompt_contract={
@@ -52,6 +58,9 @@ def action_agent(decision_context: DecisionContext, deal_context: DealContext) -
             "stage_name": "action_agent",
             "policy_mode": "policy_guided",
             "output_model": ActionPlanContext,
+            "workflow_id": workflow_id,
+            "run_id": run_id or "adhoc-run",
+            "agent_id": "action_agent",
         },
     )
     subject, preview = _subject_and_preview(decision_context)

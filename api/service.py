@@ -12,6 +12,7 @@ from dataclasses import asdict
 from typing import Any, Dict, List
 
 from agents.contracts import ExecutionOutcome
+from agents.prompt_templates import get_prompt_diagnostics_report
 from approval.action_lifecycle import approve, edit, reject
 from context.models import (
     ActionContext,
@@ -169,6 +170,9 @@ class WorkflowAPI:
             raise ValueError("Run summary not found")
         summary["path_metrics"] = self.orchestrator.path_metrics.snapshot()
         return summary
+
+    def get_prompt_diagnostics(self, *, limit: int = 25) -> dict:
+        return get_prompt_diagnostics_report(limit=limit)
 
     def _get_action(self, action_id: str) -> dict:
         action = self.orchestrator.queue.get(action_id)

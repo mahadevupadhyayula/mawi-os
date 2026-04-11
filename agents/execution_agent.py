@@ -38,6 +38,8 @@ def execution_agent(
     contact_name: str,
     allowed_channels: tuple[str, ...] = ("email", "crm", "sms"),
     max_risk_tier: str = "high",
+    workflow_id: str = "deal_followup_workflow",
+    run_id: str | None = None,
 ) -> ExecutionContext:
     _ = render_prompt(
         "execution_prompt.txt",
@@ -46,6 +48,9 @@ def execution_agent(
             "stage_name": "execution_agent",
             "policy_mode": "enforced",
             "output_model": ExecutionContext,
+            "workflow_id": workflow_id,
+            "run_id": run_id or "adhoc-run",
+            "agent_id": "execution_agent",
         },
     )
     if action_plan.status != "approved":

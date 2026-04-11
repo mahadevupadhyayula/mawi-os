@@ -13,7 +13,7 @@ from agents.prompt_templates import render_prompt
 from context.models import SignalContext
 
 
-def signal_agent(raw_data: dict) -> SignalContext:
+def signal_agent(raw_data: dict, *, workflow_id: str = "deal_followup_workflow", run_id: str | None = None) -> SignalContext:
     _ = render_prompt(
         "signal_prompt.txt",
         prompt_contract={
@@ -21,6 +21,9 @@ def signal_agent(raw_data: dict) -> SignalContext:
             "stage_name": "signal_agent",
             "policy_mode": "observe_only",
             "output_model": SignalContext,
+            "workflow_id": workflow_id,
+            "run_id": run_id or "adhoc-run",
+            "agent_id": "signal_agent",
         },
     )
     days = int(raw_data.get("days_since_reply", 0))

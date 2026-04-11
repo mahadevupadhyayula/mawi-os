@@ -17,6 +17,9 @@ def strategist_agent(
     signal_context: SignalContext,
     deal_context: DealContext,
     memory_evidence: list[dict] | None = None,
+    *,
+    workflow_id: str = "deal_followup_workflow",
+    run_id: str | None = None,
 ) -> DecisionContext:
     _ = render_prompt(
         "strategist_prompt.txt",
@@ -25,6 +28,9 @@ def strategist_agent(
             "stage_name": "strategist_agent",
             "policy_mode": "policy_guided",
             "output_model": DecisionContext,
+            "workflow_id": workflow_id,
+            "run_id": run_id or "adhoc-run",
+            "agent_id": "strategist_agent",
         },
     )
     baseline_strategy = "roi_framing" if "budget timing" in deal_context.known_objections else "risk_reduction"
