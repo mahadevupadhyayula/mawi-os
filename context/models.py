@@ -72,6 +72,25 @@ class ActionContext(SectionBase):
 
 
 @dataclass
+class ActionStep:
+    step_id: str
+    order: int
+    channel: Literal["email", "crm"] = "email"
+    action_type: str = "send_email"
+    subject: str = ""
+    preview: str = ""
+    body_draft: str = ""
+    status: ContextStatus = "draft"
+
+
+@dataclass
+class ActionPlanContext(SectionBase):
+    plan_id: str = ""
+    steps: List[ActionStep] = field(default_factory=list)
+    status: ContextStatus = "draft"
+
+
+@dataclass
 class ExecutionContext(SectionBase):
     execution_id: str = ""
     status: ContextStatus = "draft"
@@ -101,6 +120,7 @@ class ContextEnvelope:
     deal_context: Optional[DealContext] = None
     decision_context: Optional[DecisionContext] = None
     action_context: Optional[ActionContext] = None
+    action_plan: Optional[ActionPlanContext] = None
     execution_context: Optional[ExecutionContext] = None
     outcome_context: Optional[OutcomeContext] = None
     raw_data: Dict[str, Any] = field(default_factory=dict)
