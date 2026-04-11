@@ -132,11 +132,27 @@ If one or more criteria are incomplete, the workflow is **Partial**.
 Only workflows with code currently present in this repository are listed here.
 
 - **SaaS Sales Deal Follow-up Execution** — **Implemented** (MVP target).
-  - Workflow definition: [`workflows/deal_followup_workflow.py`](./workflows/deal_followup_workflow.py)
-  - Trigger + registry wiring: [`workflows/triggers.py`](./workflows/triggers.py), [`workflows/registry.py`](./workflows/registry.py)
-  - Orchestration runner: [`orchestrator/runner.py`](./orchestrator/runner.py)
+  - Trigger: [`workflows/triggers.py`](./workflows/triggers.py)
+  - Workflow definition + stages: [`workflows/deal_followup_workflow.py`](./workflows/deal_followup_workflow.py)
+  - Orchestration + state progression: [`orchestrator/runner.py`](./orchestrator/runner.py), [`orchestrator/state_machine.py`](./orchestrator/state_machine.py)
+  - Execution paths/tools: [`agents/execution_agent.py`](./agents/execution_agent.py), [`tools/email_tool.py`](./tools/email_tool.py), [`tools/crm_tool.py`](./tools/crm_tool.py), [`tools/deal_tool.py`](./tools/deal_tool.py)
+  - Evaluation loop: [`agents/evaluator_agent.py`](./agents/evaluator_agent.py), [`evaluation/outcome_analyzer.py`](./evaluation/outcome_analyzer.py), [`evaluation/metrics.py`](./evaluation/metrics.py)
+  - Persistence + audit trail: [`data/repositories/workflow_repo.py`](./data/repositories/workflow_repo.py), [`data/repositories/action_repo.py`](./data/repositories/action_repo.py), [`data/repositories/outcome_repo.py`](./data/repositories/outcome_repo.py), [`orchestrator/audit_logger.py`](./orchestrator/audit_logger.py)
+  - API orchestration entry points: [`api/service.py`](./api/service.py), [`api/router.py`](./api/router.py)
 
 - **All other named roadmap workflows** — **Not Implemented yet** (tracked in [`BACKLOG.md`](./BACKLOG.md)).
+
+### Implemented Workflow Update Policy
+
+Update this section immediately when a workflow first satisfies all implementation criteria:
+
+1. Trigger
+2. Orchestration
+3. Execution
+4. Evaluation
+5. Persistence
+
+When promoting a workflow to **Implemented**, include concrete cross-links to the module files that satisfy each criterion.
 
 ---
 
@@ -400,6 +416,31 @@ Known error values:
   "message": "Deal state not found"
 }
 ```
+
+---
+
+## 🔄 API Migration Notes
+
+Add a short migration note here whenever API method signatures, request/response schemas, or endpoint contracts change in a way that may impact callers.
+
+Template:
+
+- **Date (YYYY-MM-DD)** — `component`
+  - **Change:** what signature/contract changed.
+  - **Action required:** what downstream callers must update.
+  - **Compatibility:** backward-compatible or breaking.
+
+---
+
+## 🧾 Compatibility Changelog
+
+Track only compatibility-impacting behavior here (API signatures, persisted schema contracts, lifecycle status semantics, or workflow stage contract changes).
+
+- **2026-04-11** — Documentation policy added for:
+  - immediate `Implemented Workflows` updates once a workflow meets full criteria;
+  - strict backlog status promotion only after trigger + orchestration + execution + evaluation + persistence are all present;
+  - required module cross-links for each implemented workflow;
+  - required migration-note entries when API signatures evolve.
 
 ---
 
