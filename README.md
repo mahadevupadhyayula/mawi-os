@@ -209,6 +209,100 @@ python main.py
 
 This runs the local demo workflow end-to-end, including approval/resume behavior.
 
+### Web API Adapter (FastAPI)
+
+MAWI now includes a thin web transport adapter in `api/router.py` that maps directly to `WorkflowAPI` service methods in `api/service.py` without changing service logic.
+
+#### Endpoint Contracts
+
+Base router prefix: `/api`
+
+1) **Start workflow**
+
+- **POST** `/api/workflows/start?workflow=deal-followup`
+- **Default workflow selector:** `deal-followup`
+- **Supported selector values:** `deal-followup` (alias) or registered workflow IDs (for example `deal_followup_workflow`)
+- **Request body:**
+
+```json
+{
+  "deal_id": "deal_123"
+}
+```
+
+- **Response body:** context envelope dictionary returned by `WorkflowAPI.start_workflow`.
+
+2) **List actions**
+
+- **GET** `/api/actions?status=pending_approval`
+- **Response body:**
+
+```json
+{
+  "actions": [
+    {
+      "action_id": "act_1",
+      "status": "pending_approval"
+    }
+  ]
+}
+```
+
+3) **Approve action**
+
+- **POST** `/api/actions/approve`
+- **Request body:**
+
+```json
+{
+  "workflow": "deal-followup",
+  "action_id": "act_1",
+  "approver": "manager@mawi.ai",
+  "reply_received": true,
+  "meeting_booked": false
+}
+```
+
+- **Response body:** `{ "status": "approved", "deal_id": "...", "action_id": "..." }`
+
+4) **Reject action**
+
+- **POST** `/api/actions/reject`
+- **Request body:**
+
+```json
+{
+  "workflow": "deal-followup",
+  "action_id": "act_1",
+  "approver": "manager@mawi.ai",
+  "reason": "Tone is too aggressive"
+}
+```
+
+- **Response body:** `{ "status": "rejected", "deal_id": "...", "action_id": "...", "reason": "..." }`
+
+5) **Edit action**
+
+- **POST** `/api/actions/edit`
+- **Request body:**
+
+```json
+{
+  "workflow": "deal-followup",
+  "action_id": "act_1",
+  "approver": "manager@mawi.ai",
+  "preview": "Updated subject line",
+  "body_draft": "Refined body copy"
+}
+```
+
+- **Response body:** `{ "status": "edited", "deal_id": "...", "action_id": "..." }`
+
+6) **Get deal state**
+
+- **GET** `/api/deals/{deal_id}`
+- **Response body:** context envelope dictionary returned by `WorkflowAPI.get_deal_state`.
+
 ---
 
 ## 🤝 Contribution
