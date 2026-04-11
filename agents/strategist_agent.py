@@ -20,10 +20,12 @@ def strategist_agent(
 ) -> DecisionContext:
     _ = render_prompt("strategist_prompt.txt")
     baseline_strategy = "roi_framing" if "budget timing" in deal_context.known_objections else "risk_reduction"
-    evidence = memory_evidence or []
+    evidence = [item for item in (memory_evidence or []) if isinstance(item, dict)]
     evidence_text = " ".join(item.get("snippet", "").lower() for item in evidence)
-    memory_confidence_impact = round(sum(float(item.get("confidence_impact", 0.0)) for item in evidence), 3)
-    memory_confidence_impact = min(memory_confidence_impact, 0.15)
+
+    raw_impact = round(sum(float(item.get("confidence_impact", 0.0)) for item in evidence), 3)
+    # Guardrail: preserve the current no-memory confidence band while allowing bounded lift with evidence.
+    memory_confidence_impact = max(0.0, min(raw_impact, 0.15))
 
     if not evidence:
         strategy_type = baseline_strategy
