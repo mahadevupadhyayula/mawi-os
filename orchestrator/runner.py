@@ -8,6 +8,7 @@ Handles sequencing, retries, and auditability while delegating domain decisions 
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 
 from agents.action_agent import action_agent
@@ -204,11 +205,27 @@ class WorkflowOrchestrator:
                 )
             )
         for plan_step in action_plan.steps:
-            plan_step.status = "approved"
+            if plan_step.status != "executed":
+                plan_step.status = "approved"
         action_plan.status = "approved"
         envelope.action_plan = action_plan
 
         run_id = self._run_ids.get(envelope.meta.deal_id)
+        existing_execution = self.outcome_repo.get_execution(action_ctx.action_id)
+        if existing_execution:
+            executed_steps = {str(item["step_id"]): item for item in self.outcome_repo.list_execution_steps(action_ctx.action_id)}
+            for plan_step in action_plan.steps:
+                persisted = executed_steps.get(plan_step.step_id)
+                if not persisted:
+                    continue
+                plan_step.status = str(persisted["status"])
+                plan_step.retry_count = int(persisted["retry_count"] or 0)
+                receipt = persisted.get("receipt_json")
+                if isinstance(receipt, str) and receipt:
+                    plan_step.execution_result = json.loads(receipt)
+            if action_plan.steps and all(step.status == "executed" for step in action_plan.steps):
+                return envelope
+
         execution = with_retries(
             lambda: execution_agent(action_plan, deal_id=envelope.meta.deal_id, contact_name=envelope.raw_data.get("contact_name", "Prospect"))
         )
@@ -216,6 +233,7 @@ class WorkflowOrchestrator:
         set_stage(envelope, "execution_done")
         if run_id:
             self.outcome_repo.record_execution(run_id, envelope.meta.deal_id, action_ctx.action_id, execution)
+            self.action_repo.upsert_action_plan(run_id, envelope.meta.deal_id, action_ctx.action_id, action_plan)
             self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
             self._snapshot(envelope.meta.deal_id, envelope, source_agent="execution_agent")
         log_step("execution_agent", f"Execution status={execution.status}")

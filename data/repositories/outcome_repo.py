@@ -39,6 +39,45 @@ class OutcomeRepository:
                     _now(),
                 ),
             )
+            for item in self._step_results_from_events(execution.tool_events):
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO execution_step_logs (
+                        execution_id, action_id, step_id, run_id, deal_id, step_order,
+                        status, retry_count, receipt_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        execution.execution_id,
+                        action_id,
+                        item["step_id"],
+                        run_id,
+                        deal_id,
+                        item["order"],
+                        item["status"],
+                        item["retry_count"],
+                        json.dumps(item["receipt"]),
+                        _now(),
+                    ),
+                )
+
+    def get_execution(self, action_id: str) -> dict | None:
+        with self.db.tx() as conn:
+            row = conn.execute("SELECT * FROM execution_logs WHERE action_id=?", (action_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_execution_steps(self, action_id: str) -> list[dict]:
+        with self.db.tx() as conn:
+            rows = conn.execute(
+                """
+                SELECT step_id, step_order, status, retry_count, receipt_json
+                FROM execution_step_logs
+                WHERE action_id=?
+                ORDER BY step_order ASC
+                """,
+                (action_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def record_outcome(self, run_id: str, deal_id: str, action_id: str, outcome: OutcomeContext) -> None:
         with self.db.tx() as conn:
@@ -84,3 +123,9 @@ class OutcomeRepository:
                 (persona, limit),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def _step_results_from_events(self, tool_events: list[dict]) -> list[dict]:
+        for event in tool_events:
+            if "by_step" in event and isinstance(event["by_step"], list):
+                return list(event["by_step"])
+        return []

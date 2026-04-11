@@ -39,17 +39,42 @@ def execution_agent(action_plan: ActionPlanContext, *, deal_id: str, contact_nam
         )
 
     ordered_steps = sorted(action_plan.steps, key=lambda step: step.order)
-    receipts: list[dict] = []
     tool_events: list[dict] = []
+    step_results: list[dict] = []
     for step in ordered_steps:
-        receipt = _execute_step(step, deal_id=deal_id, contact_name=contact_name)
-        receipts.append({"step_id": step.step_id, "channel": step.channel, "action_type": step.action_type, "receipt": receipt})
+        if step.status == "executed" and step.execution_result.get("success"):
+            receipt = dict(step.execution_result)
+            event_type = "already_executed"
+        else:
+            step.retry_count += 1
+            receipt = _execute_step(step, deal_id=deal_id, contact_name=contact_name)
+            event_type = "executed"
+        step.execution_result = receipt
+        if receipt.get("success"):
+            step.status = "executed"
+            step.last_error = ""
+        else:
+            step.status = "failed"
+            step.last_error = str(receipt.get("error", "execution_failed"))
+        step_results.append(
+            {
+                "step_id": step.step_id,
+                "order": step.order,
+                "channel": step.channel,
+                "action_type": step.action_type,
+                "status": step.status,
+                "retry_count": step.retry_count,
+                "receipt": receipt,
+            }
+        )
         tool_events.append(
             {
                 "step_id": step.step_id,
+                "order": step.order,
                 "tool": step.action_type,
                 "channel": step.channel,
                 "success": bool(receipt.get("success")),
+                "event_type": event_type,
             }
         )
     all_success = all(evt["success"] for evt in tool_events) if tool_events else False
@@ -58,15 +83,15 @@ def execution_agent(action_plan: ActionPlanContext, *, deal_id: str, contact_nam
     reasoning = "Executed ordered action plan through channel-specific adapters."
     confidence = 0.88 if status == "executed" else 0.55
 
-    email_receipt = next((item["receipt"] for item in receipts if item["channel"] == "email"), {})
-    crm_receipt = next((item["receipt"] for item in receipts if item["channel"] == "crm"), {})
+    email_receipt = next((item["receipt"] for item in step_results if item["channel"] == "email"), {})
+    crm_receipt = next((item["receipt"] for item in step_results if item["channel"] == "crm"), {})
     result = make_result(
         ExecutionContext(
             execution_id=str(uuid4()),
             status=status,
             email_result=email_receipt,
             crm_result=crm_receipt,
-            tool_events=tool_events,
+            tool_events=tool_events + [{"by_step": step_results}],
             reasoning=reasoning,
             confidence=confidence,
         ),
