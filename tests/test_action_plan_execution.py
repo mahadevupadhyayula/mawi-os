@@ -65,6 +65,67 @@ class TestActionPlanExecution(unittest.TestCase):
         self.assertGreaterEqual(step_2.retry_count, 1)
         self.assertEqual(step_2.status, "executed")
 
+    def test_execution_agent_dispatches_sms_channel(self) -> None:
+        step_1 = ActionStep(
+            step_id="step-sms",
+            order=1,
+            channel="sms",
+            action_type="send_sms",
+            body_draft="Quick check-in from MAWI.",
+            status="approved",
+        )
+        decision = DecisionContext(
+            reasoning="seed",
+            confidence=0.8,
+            strategy_id="strat-risk",
+            strategy_type="risk_reversal",
+            message_goal="restart_conversation",
+            fallback_strategy="social_proof",
+        )
+        plan = action_agent(decision, self._deal())
+        plan.steps = [step_1]
+        plan.status = "approved"
+
+        execution = execution_agent(plan, deal_id="deal-1", contact_name="Taylor")
+
+        self.assertEqual(execution.status, "executed")
+        self.assertEqual(step_1.status, "executed")
+        self.assertTrue(step_1.execution_result.get("success"))
+        self.assertIn("sms_id", step_1.execution_result)
+
+    def test_execution_agent_blocks_channel_not_in_allow_list(self) -> None:
+        step_1 = ActionStep(
+            step_id="step-sms",
+            order=1,
+            channel="sms",
+            action_type="send_sms",
+            body_draft="Quick check-in from MAWI.",
+            status="approved",
+        )
+        decision = DecisionContext(
+            reasoning="seed",
+            confidence=0.8,
+            strategy_id="strat-risk",
+            strategy_type="risk_reversal",
+            message_goal="restart_conversation",
+            fallback_strategy="social_proof",
+        )
+        plan = action_agent(decision, self._deal())
+        plan.steps = [step_1]
+        plan.status = "approved"
+
+        execution = execution_agent(
+            plan,
+            deal_id="deal-1",
+            contact_name="Taylor",
+            allowed_channels=("email", "crm"),
+            max_risk_tier="high",
+        )
+
+        self.assertEqual(execution.status, "failed")
+        self.assertEqual(step_1.status, "failed")
+        self.assertEqual(step_1.last_error, "channel_not_allowed")
+
 
 if __name__ == "__main__":
     unittest.main()
