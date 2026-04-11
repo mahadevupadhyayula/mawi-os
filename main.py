@@ -32,13 +32,34 @@ def run_demo() -> None:
 
     final_state = api.get_deal_state(deal_id)
     print("=== Final deal state ===")
-    pprint({
-        "stage": final_state["meta"]["workflow_stage"],
-        "execution_status": final_state.get("execution_context", {}).get("status"),
-        "outcome_label": final_state.get("outcome_context", {}).get("outcome_label"),
-        "insight": final_state.get("outcome_context", {}).get("insight"),
-    })
+    pprint(
+        {
+            "stage": final_state["meta"]["workflow_stage"],
+            "execution_status": final_state.get("execution_context", {}).get("status"),
+            "outcome_label": final_state.get("outcome_context", {}).get("outcome_label"),
+            "insight": final_state.get("outcome_context", {}).get("insight"),
+        }
+    )
+
+
+def run_new_deal_demo() -> None:
+    api = WorkflowAPI()
+    deal_id = "deal-2001"
+
+    print("=== Start new-deal outreach workflow ===")
+    state = api.start_workflow(
+        deal_id,
+        workflow_name="new_deal_outreach_workflow",
+    )
+    pprint(
+        {
+            "workflow": "new_deal_outreach_workflow",
+            "stage": state["meta"]["workflow_stage"],
+            "action_status": state.get("action_context", {}).get("status"),
+        }
+    )
 
 
 if __name__ == "__main__":
     run_demo()
+    run_new_deal_demo()

@@ -12,7 +12,11 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from workflows.deal_followup_workflow import WORKFLOW_NAME, WORKFLOW_STEPS
-from workflows.triggers import should_trigger_deal_followup
+from workflows.new_deal_outreach_workflow import (
+    WORKFLOW_NAME as NEW_DEAL_WORKFLOW_NAME,
+    WORKFLOW_STEPS as NEW_DEAL_WORKFLOW_STEPS,
+)
+from workflows.triggers import should_trigger_deal_followup, should_trigger_new_deal_outreach
 
 
 @dataclass(frozen=True)
@@ -29,7 +33,12 @@ WORKFLOW_REGISTRY: dict[str, WorkflowMetadata] = {
         workflow_id=WORKFLOW_NAME,
         steps=WORKFLOW_STEPS,
         trigger=should_trigger_deal_followup,
-    )
+    ),
+    NEW_DEAL_WORKFLOW_NAME: WorkflowMetadata(
+        workflow_id=NEW_DEAL_WORKFLOW_NAME,
+        steps=NEW_DEAL_WORKFLOW_STEPS,
+        trigger=should_trigger_new_deal_outreach,
+    ),
 }
 
 

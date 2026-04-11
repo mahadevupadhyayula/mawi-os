@@ -60,7 +60,7 @@ class WorkflowOrchestrator:
 
         if not workflow.trigger(raw):
             set_stage(envelope, "initialized")
-            log_step("trigger", "Deal did not meet stalled threshold; workflow skipped.")
+            log_step("trigger", f"Deal did not meet trigger criteria for {workflow.workflow_id}; workflow skipped.")
             self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_SKIPPED, complete=True)
             self._snapshot(deal_id, envelope, source_agent="trigger")
             return envelope
