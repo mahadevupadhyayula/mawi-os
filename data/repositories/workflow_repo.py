@@ -119,3 +119,55 @@ class WorkflowRepository:
                 (deal_id,),
             ).fetchone()
             return str(row["run_id"]) if row else None
+
+    def get_run_summary(self, *, run_id: str | None = None, deal_id: str | None = None) -> dict | None:
+        if run_id is None and deal_id is None:
+            raise ValueError("Either run_id or deal_id must be provided")
+
+        with self.db.tx() as conn:
+            if run_id:
+                run_row = conn.execute("SELECT * FROM workflow_runs WHERE run_id=?", (run_id,)).fetchone()
+            else:
+                run_row = conn.execute(
+                    """
+                    SELECT *
+                    FROM workflow_runs
+                    WHERE deal_id=?
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                    """,
+                    (deal_id,),
+                ).fetchone()
+            if not run_row:
+                return None
+
+            status_rows = conn.execute(
+                """
+                SELECT status, COUNT(*) AS count
+                FROM action_steps
+                WHERE run_id=?
+                GROUP BY status
+                """,
+                (run_row["run_id"],),
+            ).fetchall()
+            statuses = {str(row["status"]): int(row["count"]) for row in status_rows}
+            execution_row = conn.execute(
+                "SELECT status, error_code, error_message FROM execution_logs WHERE run_id=? ORDER BY executed_at DESC LIMIT 1",
+                (run_row["run_id"],),
+            ).fetchone()
+            outcome_row = conn.execute(
+                """
+                SELECT outcome_label, confidence, created_at
+                FROM outcomes
+                WHERE run_id=?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (run_row["run_id"],),
+            ).fetchone()
+
+        summary = dict(run_row)
+        summary["action_step_status_counts"] = statuses
+        summary["latest_execution"] = dict(execution_row) if execution_row else None
+        summary["latest_outcome"] = dict(outcome_row) if outcome_row else None
+        return summary

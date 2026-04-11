@@ -163,6 +163,13 @@ class WorkflowAPI:
 
         raise ValueError("Deal state not found")
 
+    def get_run_summary(self, *, deal_id: str | None = None, run_id: str | None = None) -> dict:
+        summary = self.orchestrator.workflow_repo.get_run_summary(run_id=run_id, deal_id=deal_id)
+        if summary is None:
+            raise ValueError("Run summary not found")
+        summary["path_metrics"] = self.orchestrator.path_metrics.snapshot()
+        return summary
+
     def _get_action(self, action_id: str) -> dict:
         action = self.orchestrator.queue.get(action_id)
         if action:

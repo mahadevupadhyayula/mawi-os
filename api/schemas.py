@@ -57,6 +57,10 @@ class DealStateResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class RunSummaryResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
 class ErrorResponse(BaseModel):
     error: str = Field(..., description="Stable error type for API clients.")
     message: str = Field(..., description="Human-readable description for debugging and display.")
