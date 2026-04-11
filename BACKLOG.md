@@ -4,6 +4,23 @@
 
 This document tracks workflows and capabilities outside the strict MVP boundary.
 
+Status tags used in this document:
+
+- **[Implemented]** — meets definition below end-to-end in code.
+- **[Partial]** — some components exist, but not full end-to-end criteria.
+- **[Not Implemented]** — planned only.
+
+### Definition of Implemented
+
+A workflow is **Implemented** when all five criteria exist in code:
+**trigger + orchestration + execution + evaluation + persistence**.
+
+Evidence references for current MVP implementation:
+
+- Workflow: [`workflows/deal_followup_workflow.py`](./workflows/deal_followup_workflow.py)
+- Trigger/registry: [`workflows/triggers.py`](./workflows/triggers.py), [`workflows/registry.py`](./workflows/registry.py)
+- Orchestration: [`orchestrator/runner.py`](./orchestrator/runner.py)
+
 Roadmap organization:
 
 - **Phase 1:** MVP execution wedge (current)
@@ -16,11 +33,11 @@ Roadmap organization:
 
 ### Included
 
-- Deal follow-up workflow for stalled opportunities
-- Signal → strategy → action pipeline
-- Approval queue and policy-based human gate
-- Tool execution stubs (email/CRM)
-- Basic evaluation + memory feedback
+- Deal follow-up workflow for stalled opportunities **[Implemented]**
+- Signal → strategy → action pipeline **[Implemented]**
+- Approval queue and policy-based human gate **[Implemented]**
+- Tool execution stubs (email/CRM) **[Implemented]**
+- Basic evaluation + memory feedback **[Partial]**
 
 ### MVP Exit Criteria
 
@@ -35,14 +52,14 @@ Roadmap organization:
 
 ### New Workflows
 
-- New Deal Outreach Workflow
-- Deal Risk Detection Workflow
-- Deal Intervention Workflow
-- Multi-threading Workflow
-- Meeting Follow-up Workflow
-- Objection Handling Workflow
-- Multi-channel Outreach Workflow
-- Adaptive Sequencing Workflow
+- New Deal Outreach Workflow **[Not Implemented]**
+- Deal Risk Detection Workflow **[Not Implemented]**
+- Deal Intervention Workflow **[Not Implemented]**
+- Multi-threading Workflow **[Not Implemented]**
+- Meeting Follow-up Workflow **[Not Implemented]**
+- Objection Handling Workflow **[Not Implemented]**
+- Multi-channel Outreach Workflow **[Not Implemented]**
+- Adaptive Sequencing Workflow **[Not Implemented]**
 
 ### Capabilities
 
@@ -64,10 +81,10 @@ Roadmap organization:
 
 ### New Workflows
 
-- Revenue Forecasting Workflow
-- Rep Performance Optimization Workflow
-- Workflow Builder (custom workflows)
-- Cross-deal intelligence workflows
+- Revenue Forecasting Workflow **[Not Implemented]**
+- Rep Performance Optimization Workflow **[Not Implemented]**
+- Workflow Builder (custom workflows) **[Not Implemented]**
+- Cross-deal intelligence workflows **[Not Implemented]**
 
 ### Capabilities
 
