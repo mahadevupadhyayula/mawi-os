@@ -8,13 +8,41 @@ Declares composable workflow contracts used by orchestration to run repeatable b
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
 from workflows.deal_followup_workflow import WORKFLOW_NAME, WORKFLOW_STEPS
+from workflows.triggers import should_trigger_deal_followup
 
 
-WORKFLOW_REGISTRY = {WORKFLOW_NAME: WORKFLOW_STEPS}
+@dataclass(frozen=True)
+class WorkflowMetadata:
+    workflow_id: str
+    steps: list[str]
+    trigger: Callable[[dict[str, Any]], bool]
+    config: dict[str, Any] = field(default_factory=dict)
 
 
-def get_workflow_steps(name: str) -> list[str]:
-    if name not in WORKFLOW_REGISTRY:
-        raise ValueError(f"Unknown workflow: {name}")
-    return WORKFLOW_REGISTRY[name]
+DEFAULT_WORKFLOW_NAME = WORKFLOW_NAME
+WORKFLOW_REGISTRY: dict[str, WorkflowMetadata] = {
+    WORKFLOW_NAME: WorkflowMetadata(
+        workflow_id=WORKFLOW_NAME,
+        steps=WORKFLOW_STEPS,
+        trigger=should_trigger_deal_followup,
+    )
+}
+
+
+def get_workflow(name: str | None = None) -> WorkflowMetadata:
+    workflow_name = name or DEFAULT_WORKFLOW_NAME
+    if workflow_name not in WORKFLOW_REGISTRY:
+        raise ValueError(f"Unknown workflow: {workflow_name}")
+    return WORKFLOW_REGISTRY[workflow_name]
+
+
+def is_known_workflow(name: str) -> bool:
+    return name in WORKFLOW_REGISTRY
+
+
+def get_registered_workflow_names() -> list[str]:
+    return sorted(WORKFLOW_REGISTRY.keys())
