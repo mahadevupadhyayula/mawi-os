@@ -19,7 +19,7 @@ from agents.evaluator_agent import evaluator_agent
 from agents.execution_agent import execution_agent
 from agents.signal_agent import signal_agent
 from agents.strategist_agent import strategist_agent
-from agents.prompt_templates import attach_prompt_outcome
+from agents.prompt_templates import attach_prompt_outcome, attach_prompt_outcome_metrics
 from agents.contracts import ExecutionOutcome
 from approval.policy import requires_approval
 from approval.queue import ApprovalQueue
@@ -387,6 +387,12 @@ class WorkflowOrchestrator:
         if run_id:
             self.outcome_repo.record_outcome(run_id, envelope.meta.deal_id, action_ctx.action_id, outcome_ctx)
             attach_prompt_outcome(run_id=run_id, outcome_label=outcome_ctx.outcome_label)
+            attach_prompt_outcome_metrics(
+                run_id=run_id,
+                reply_received=outcome.reply_received,
+                meeting_booked=outcome.meeting_booked,
+                execution_success=execution.status == "executed",
+            )
             persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
             memory_insight = f"{outcome_ctx.insight} | {_memory_influence_summary(envelope)}"
             self.outcome_repo.add_persona_insight(persona, memory_insight, outcome_ctx.confidence)
