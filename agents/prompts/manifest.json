@@ -1,0 +1,17 @@
+{
+  "manifest_version": "1.0.0",
+  "profiles": {
+    "common": {
+      "version": "1.0.0",
+      "description": "Default prompt templates used when a workflow-specific profile is unavailable."
+    },
+    "deal_followup_workflow": {
+      "version": "1.0.0",
+      "description": "Prompt profile for stalled-deal follow-up workflows."
+    },
+    "new_deal_outreach_workflow": {
+      "version": "1.0.0",
+      "description": "Prompt profile for new-deal outreach workflows."
+    }
+  }
+}
