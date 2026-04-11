@@ -14,7 +14,15 @@ from context.models import DealContext, SignalContext
 
 
 def context_agent(raw_data: dict, signal_context: SignalContext) -> DealContext:
-    _ = render_prompt("context_prompt.txt")
+    _ = render_prompt(
+        "context_prompt.txt",
+        prompt_contract={
+            "workflow_goal": "Build normalized deal context for downstream strategy and action agents.",
+            "stage_name": "context_agent",
+            "policy_mode": "observe_only",
+            "expected_output_schema": "DealContext(persona, deal_stage, known_objections, recent_timeline, recommended_tone, reasoning, confidence)",
+        },
+    )
     reasoning = "Built persona and objection context from deal snapshot and signal."
     confidence = 0.82 if signal_context.stalled else 0.7
     result = make_result(
