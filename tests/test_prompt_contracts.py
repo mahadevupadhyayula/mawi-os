@@ -10,6 +10,7 @@ from agents.prompt_templates import (
     validate_prompt_health_report,
 )
 from context.models import DealContext
+from workflows.registry import WORKFLOW_REGISTRY, register_generated_workflow
 
 
 class TestPromptContracts(unittest.TestCase):
@@ -128,6 +129,63 @@ class TestPromptContracts(unittest.TestCase):
             )
 
         self.assertIn("unused render kwargs", str(ctx.exception))
+
+
+    def test_register_generated_workflow_uses_block_pack_template(self) -> None:
+        workflow_id = "generated_outreach_contract_test"
+        try:
+            register_generated_workflow(
+                workflow_id=workflow_id,
+                workflow_type="outreach",
+                block_overrides={
+                    "goal": "Assemble ${stage_name} output for generated outreach workflow.",
+                },
+                example_overrides=("Use one concrete CTA.",),
+            )
+            rendered = render_prompt(
+                "action_prompt.txt",
+                prompt_contract={
+                    "workflow_id": workflow_id,
+                    "workflow_goal": "Generated workflow run.",
+                    "stage_name": "action_agent",
+                    "policy_mode": "policy_guided",
+                },
+            )
+            self.assertIn("workflow_id: generated_outreach_contract_test", rendered)
+            self.assertIn("Assemble action_agent output for generated outreach workflow.", rendered)
+            self.assertIn("Examples: Use as guidance only.", rendered)
+        finally:
+            WORKFLOW_REGISTRY.pop(workflow_id, None)
+
+
+    def test_generated_workflow_default_block_packs_cover_common_types(self) -> None:
+        for workflow_type in ("outreach", "intervention", "follow-up"):
+            workflow_id = f"generated_{workflow_type.replace('-', '_')}_contract_test"
+            try:
+                register_generated_workflow(workflow_id=workflow_id, workflow_type=workflow_type)
+                rendered = render_prompt(
+                    "signal_prompt.txt",
+                    prompt_contract={
+                        "workflow_id": workflow_id,
+                        "workflow_goal": "Generated workflow run.",
+                        "stage_name": "signal_agent",
+                        "policy_mode": "observe_only",
+                    },
+                )
+                self.assertIn("Role: You are signal", rendered)
+                self.assertIn("Output Fields: Return JSON object with required fields", rendered)
+            finally:
+                WORKFLOW_REGISTRY.pop(workflow_id, None)
+
+    def test_register_generated_workflow_validates_required_block_schema(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            register_generated_workflow(
+                workflow_id="generated_invalid_contract_test",
+                workflow_type="intervention",
+                block_overrides={"invalid": "bad override"},
+            )
+
+        self.assertIn("Unknown prompt block override keys", str(ctx.exception))
 
     def test_prompt_health_report_passes_for_all_workflow_agent_combinations(self) -> None:
         report = generate_prompt_health_report()

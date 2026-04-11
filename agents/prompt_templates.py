@@ -30,11 +30,13 @@ from context.models import (
 )
 from workflows.registry import (
     DEFAULT_WORKFLOW_NAME,
+    get_generated_prompt_blocks,
     get_registered_workflow_names,
     get_workflow_release_version,
     is_known_workflow,
 )
 from data.repositories import PromptDiagnosticsRepository
+from agents.prompt_blocks import PromptBlock, compose_template_from_blocks
 
 PROMPT_DIR = Path(__file__).parent / "prompts"
 COMMON_PROMPT_PROFILE = "common"
@@ -131,16 +133,34 @@ def load_prompt_manifest() -> dict[str, Any]:
     return manifest
 
 
-def _resolve_prompt_path(name: str, workflow_id: str) -> tuple[Path, str, bool]:
+def _compose_generated_workflow_prompt(name: str, workflow_id: str) -> str | None:
+    generated_blocks = get_generated_prompt_blocks(workflow_id)
+    if not generated_blocks:
+        return None
+    role = name.replace("_prompt.txt", "")
+    blocks = tuple(
+        PromptBlock(block_type=str(item.get("block_type", "")), content=str(item.get("content", "")))
+        for item in generated_blocks
+    )
+    return compose_template_from_blocks(role=role, blocks=blocks)
+
+
+def _resolve_prompt_path(name: str, workflow_id: str) -> tuple[Path | None, str, bool, str | None]:
     workflow_prompt_path = PROMPT_DIR / workflow_id / name
     if workflow_prompt_path.exists():
-        return workflow_prompt_path, workflow_id, False
+        return workflow_prompt_path, workflow_id, False, None
+
+    generated_prompt = _compose_generated_workflow_prompt(name, workflow_id)
+    if generated_prompt is not None:
+        _record_prompt_fallback_event(workflow_id=workflow_id, prompt_name=name, reason="generated_workflow_prompt")
+        _PROMPT_DIAGNOSTICS_REPO.increment_counter(metric_name="fallback_events")
+        return None, workflow_id, False, generated_prompt
 
     common_prompt_path = PROMPT_DIR / COMMON_PROMPT_PROFILE / name
     if common_prompt_path.exists():
         _record_prompt_fallback_event(workflow_id=workflow_id, prompt_name=name, reason="missing_workflow_prompt")
         _PROMPT_DIAGNOSTICS_REPO.increment_counter(metric_name="fallback_events")
-        return common_prompt_path, COMMON_PROMPT_PROFILE, True
+        return common_prompt_path, COMMON_PROMPT_PROFILE, True, None
 
     raise FileNotFoundError(
         f"Unable to resolve prompt template '{name}' for workflow '{workflow_id}'. "
@@ -149,7 +169,10 @@ def _resolve_prompt_path(name: str, workflow_id: str) -> tuple[Path, str, bool]:
 
 
 def load_prompt(name: str, workflow_id: str) -> str:
-    path, _, _ = _resolve_prompt_path(name, workflow_id)
+    path, _, _, generated_prompt = _resolve_prompt_path(name, workflow_id)
+    if generated_prompt is not None:
+        return generated_prompt
+    assert path is not None
     return path.read_text(encoding="utf-8")
 
 
@@ -362,10 +385,10 @@ def render_prompt(name: str, *, prompt_contract: Mapping[str, Any] | None = None
         workflow_id = contract["workflow_id"]
         agent_id = str(contract.get("agent_id") or contract.get("stage_name") or agent_id)
         _PROMPT_DIAGNOSTICS_REPO.assign_variant(run_id=run_id, workflow_id=workflow_id)
-        prompt_path, resolved_profile_id, fallback_used = _resolve_prompt_path(name, contract["workflow_id"])
+        prompt_path, resolved_profile_id, fallback_used, generated_prompt = _resolve_prompt_path(name, contract["workflow_id"])
         profile_id = resolved_profile_id
         profile_version = _resolve_profile_version(profile_id)
-        prompt_text = prompt_path.read_text(encoding="utf-8")
+        prompt_text = generated_prompt if generated_prompt is not None else prompt_path.read_text(encoding="utf-8")
         declared_schema = _extract_prompt_schema_version(prompt_text, name)
         compatible_context_versions = SCHEMA_COMPATIBILITY_MATRIX.get(declared_schema, set())
         if CONTEXT_SCHEMA_VERSION not in compatible_context_versions:
