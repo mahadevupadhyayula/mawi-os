@@ -1,0 +1,38 @@
+name: Prompt Simulation Gate
+
+on:
+  pull_request:
+    paths:
+      - "agents/prompts/**"
+      - "agents/prompt_templates.py"
+      - "agents/prompts/manifest.json"
+      - "tests/fixtures/**"
+      - "tests/snapshots/prompts/**"
+      - "tests/test_prompt_simulation_regression.py"
+      - "scripts/prompt_simulation_gate.py"
+  push:
+    branches:
+      - main
+    paths:
+      - "agents/prompts/**"
+      - "agents/prompt_templates.py"
+      - "agents/prompts/manifest.json"
+      - "tests/fixtures/**"
+      - "tests/snapshots/prompts/**"
+      - "tests/test_prompt_simulation_regression.py"
+      - "scripts/prompt_simulation_gate.py"
+
+jobs:
+  prompt-simulation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run prompt simulation gate
+        run: python scripts/prompt_simulation_gate.py
