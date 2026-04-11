@@ -33,6 +33,20 @@ from tools.deal_tool import fetch_deal_data
 from workflows.registry import get_workflow
 
 
+def _memory_influence_summary(envelope: ContextEnvelope) -> str:
+    decision = envelope.decision_context
+    if decision is None:
+        return "memory_used=0;memory_impact=0.000;memory_strategy=none;memory_rationale=unavailable"
+    used_count = len(decision.memory_evidence_used or [])
+    rationale = (decision.memory_rationale or "none").replace(";", ",")
+    return (
+        f"memory_used={used_count};"
+        f"memory_impact={decision.memory_confidence_impact:.3f};"
+        f"memory_strategy={decision.strategy_type or 'unknown'};"
+        f"memory_rationale={rationale}"
+    )
+
+
 class WorkflowOrchestrator:
     def __init__(self, *, approval_threshold: float = 0.8) -> None:
         self.approval_threshold = approval_threshold
@@ -212,7 +226,8 @@ class WorkflowOrchestrator:
         if run_id:
             self.outcome_repo.record_outcome(run_id, envelope.meta.deal_id, action_ctx.action_id, outcome_ctx)
             persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
-            self.outcome_repo.add_persona_insight(persona, outcome_ctx.insight, outcome_ctx.confidence)
+            memory_insight = f"{outcome_ctx.insight} | {_memory_influence_summary(envelope)}"
+            self.outcome_repo.add_persona_insight(persona, memory_insight, outcome_ctx.confidence)
             self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_COMPLETED, complete=True)
             self._snapshot(envelope.meta.deal_id, envelope, source_agent="evaluator_agent")
         log_step("evaluator_agent", f"Outcome label={outcome_ctx.outcome_label}")
@@ -222,7 +237,7 @@ class WorkflowOrchestrator:
                 deal_id=envelope.meta.deal_id,
                 action_id=action_ctx.action_id,
                 outcome_label=outcome_ctx.outcome_label,
-                insight=outcome_ctx.insight,
+                insight=f"{outcome_ctx.insight} | {_memory_influence_summary(envelope)}",
             )
         )
         self.short_memory.save(envelope.meta.deal_id, envelope)
