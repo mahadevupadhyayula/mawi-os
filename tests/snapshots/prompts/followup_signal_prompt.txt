@@ -4,6 +4,8 @@ workflow_goal: Detect stalled activity for deals needing follow-up.
 stage_name: signal_agent
 policy_mode: observe_only
 prompt_schema_version: v1
+policy_instruction_version: 2026.04
+strategy_instruction_version: 2026.04
 context_schema_version: v1
 output_model: SignalContext
 required_json_fields: ["reasoning", "confidence", "stalled", "days_since_reply", "urgency", "trigger_reason"]
@@ -14,3 +16,8 @@ Task: Complete the signal stage for the active workflow contract.
 Constraints: Return strict JSON only; include concise reasoning; confidence in [0,1].
 Output Fields: Return JSON object with required fields: reasoning, confidence, stalled, days_since_reply, urgency, trigger_reason.
 Safety Limits: Do not fabricate facts; confidence between 0 and 1; must not include unsupported claims.
+Tone Policy: Keep tone professional, respectful, and non-coercive; avoid urgency inflation or emotional pressure.
+Legal/Compliance Boundaries: Do not provide legal, regulatory, or financial advice; do not claim legal compliance status without verified evidence.
+Allowed Claims: Only include claims grounded in provided context, approved CRM facts, or explicit workflow memory; mark unknowns as unknown.
+Policy Validators: Before finalizing output, check for unsupported claims, prohibited certainty language, and unresolved uncertainty markers.
+Escalation Instructions: If confidence < 0.6 or any high-risk/policy-uncertain content is present, flag escalation_required=true with concise rationale for human review.

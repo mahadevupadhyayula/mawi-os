@@ -350,6 +350,7 @@ class WorkflowOrchestrator:
                     deal_id=envelope.meta.deal_id,
                     contact_name=envelope.raw_data.get("contact_name", "Prospect"),
                     workflow_id="deal_followup_workflow",
+                    execution_phase="human_review",
                     run_id=run_id,
                 ),
             )

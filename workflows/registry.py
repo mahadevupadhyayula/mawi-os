@@ -33,11 +33,25 @@ WORKFLOW_REGISTRY: dict[str, WorkflowMetadata] = {
         workflow_id=WORKFLOW_NAME,
         steps=WORKFLOW_STEPS,
         trigger=should_trigger_deal_followup,
+        config={
+            "max_risk_tier_by_phase": {
+                "default": "high",
+                "autonomous": "medium",
+                "human_review": "high",
+            }
+        },
     ),
     NEW_DEAL_WORKFLOW_NAME: WorkflowMetadata(
         workflow_id=NEW_DEAL_WORKFLOW_NAME,
         steps=NEW_DEAL_WORKFLOW_STEPS,
         trigger=should_trigger_new_deal_outreach,
+        config={
+            "max_risk_tier_by_phase": {
+                "default": "medium",
+                "autonomous": "low",
+                "human_review": "medium",
+            }
+        },
     ),
 }
 

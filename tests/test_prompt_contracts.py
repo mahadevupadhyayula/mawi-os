@@ -25,6 +25,8 @@ class TestPromptContracts(unittest.TestCase):
         self.assertIn("workflow_id: deal_followup_workflow", rendered)
         self.assertIn("stage_name: signal_agent", rendered)
         self.assertIn("prompt_schema_version: v1", rendered)
+        self.assertIn("policy_instruction_version:", rendered)
+        self.assertIn("strategy_instruction_version:", rendered)
         self.assertIn("required_json_fields:", rendered)
 
     def test_render_prompt_raises_when_required_keys_missing(self) -> None:
