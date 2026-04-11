@@ -1,3 +1,11 @@
+"""
+Purpose:
+Evaluation module `feedback_writer` for analyzing outcomes and generating learning signals.
+
+Technical Details:
+Calculates metrics/insights from execution traces and feeds feedback artifacts to memory for future decisions.
+"""
+
 from __future__ import annotations
 
 from memory.long_term_store import LongTermMemory

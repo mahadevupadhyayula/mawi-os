@@ -1,3 +1,11 @@
+"""
+Purpose:
+Orchestrator module `retry_policy` for coordinating workflow execution mechanics.
+
+Technical Details:
+Handles sequencing, retries, and auditability while delegating domain decisions to dedicated agents and tools.
+"""
+
 from __future__ import annotations
 
 from typing import Callable, TypeVar

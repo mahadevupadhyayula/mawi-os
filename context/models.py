@@ -1,3 +1,11 @@
+"""
+Purpose:
+Context module `models` used to model and manipulate workflow context envelopes.
+
+Technical Details:
+Defines typed structures/helpers that preserve stage-by-stage provenance and immutable-style context updates.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

@@ -1,3 +1,11 @@
+"""
+Purpose:
+Runs a local demo of the MAWI MVP workflow from signal intake through approval and outcome evaluation.
+
+Technical Details:
+Uses WorkflowAPI as the single integration surface, prints workflow snapshots with pprint, and exercises start/approve/state retrieval in sequence.
+"""
+
 from __future__ import annotations
 
 from pprint import pprint

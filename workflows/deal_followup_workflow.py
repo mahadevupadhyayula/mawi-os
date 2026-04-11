@@ -1,3 +1,11 @@
+"""
+Purpose:
+Workflow module `deal_followup_workflow` that defines triggers, registration, or stage flow behavior.
+
+Technical Details:
+Declares composable workflow contracts used by orchestration to run repeatable business processes with typed context.
+"""
+
 from __future__ import annotations
 
 WORKFLOW_NAME = "deal_followup_workflow"

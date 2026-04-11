@@ -1,3 +1,11 @@
+"""
+Purpose:
+Implements the Strategist Agent that converts signal and deal context into a recommended strategy for next-best action.
+
+Technical Details:
+Renders strategist prompt templates, applies deterministic strategy selection logic for MVP behavior, and returns typed DecisionContext payloads via shared contracts.
+"""
+
 from __future__ import annotations
 
 from agents.contracts import make_result
