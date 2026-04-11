@@ -12,7 +12,12 @@ from uuid import uuid4
 
 from agents.contracts import make_result
 from agents.prompt_templates import render_prompt
-from approval.policy import validate_step_channel_policy
+from approval.policy import (
+    escalation_instructions,
+    max_risk_tier_for_workflow_phase,
+    validate_generated_output,
+    validate_step_channel_policy,
+)
 from context.models import ActionPlanContext, ActionStep, ExecutionContext
 from tools.crm_tool import update_crm
 from tools.email_tool import send_email
@@ -37,8 +42,9 @@ def execution_agent(
     deal_id: str,
     contact_name: str,
     allowed_channels: tuple[str, ...] = ("email", "crm", "sms"),
-    max_risk_tier: str = "high",
+    max_risk_tier: str | None = None,
     workflow_id: str = "deal_followup_workflow",
+    execution_phase: str = "autonomous",
     run_id: str | None = None,
 ) -> ExecutionContext:
     _ = render_prompt(
@@ -65,19 +71,63 @@ def execution_agent(
         )
 
     ordered_steps = sorted(action_plan.steps, key=lambda step: step.order)
+    effective_max_risk_tier = max_risk_tier or max_risk_tier_for_workflow_phase(workflow_id, execution_phase)
     tool_events: list[dict] = []
     step_results: list[dict] = []
     for step in ordered_steps:
+        generation_validation = validate_generated_output(
+            step,
+            autonomous_phase=execution_phase == "autonomous",
+            risk_tier=effective_max_risk_tier,
+        )
+        if not generation_validation.allowed:
+            escalation = escalation_instructions(generation_validation)
+            receipt = {
+                "success": False,
+                "error": "generated_output_policy_violation",
+                "reasons": list(generation_validation.reasons),
+                "escalation": escalation,
+            }
+            step.retry_count += 1
+            step.execution_result = receipt
+            step.status = "failed"
+            step.last_error = "generated_output_policy_violation"
+            step_results.append(
+                {
+                    "step_id": step.step_id,
+                    "order": step.order,
+                    "channel": step.channel,
+                    "action_type": step.action_type,
+                    "status": step.status,
+                    "retry_count": step.retry_count,
+                    "receipt": receipt,
+                }
+            )
+            tool_events.append(
+                {
+                    "step_id": step.step_id,
+                    "order": step.order,
+                    "tool": step.action_type,
+                    "channel": step.channel,
+                    "success": False,
+                    "event_type": "blocked_by_output_policy",
+                    "policy_reasons": list(generation_validation.reasons),
+                    "escalation": escalation,
+                }
+            )
+            continue
+
         policy_decision = validate_step_channel_policy(
             step,
             allowed_channels=allowed_channels,
-            max_risk_tier=max_risk_tier,
+            max_risk_tier=effective_max_risk_tier,
         )
         channel_metadata = {
             "policy": {
                 "allowed_channels": list(allowed_channels),
-                "max_risk_tier": max_risk_tier,
+                "max_risk_tier": effective_max_risk_tier,
                 "channel_risk_tier": policy_decision.risk_tier,
+                "execution_phase": execution_phase,
             }
         }
         if not policy_decision.allowed:

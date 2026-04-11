@@ -40,6 +40,8 @@ REQUIRED_PROMPT_CONTRACT_KEYS = (
     "policy_mode",
 )
 PROMPT_SCHEMA_VERSION = "v1"
+POLICY_INSTRUCTION_VERSION = "2026.04"
+STRATEGY_INSTRUCTION_VERSION = "2026.04"
 SCHEMA_COMPATIBILITY_MATRIX: dict[str, set[str]] = {
     "v1": {"v1"},
 }
@@ -58,6 +60,11 @@ PROMPT_REQUIRED_SECTIONS: dict[str, str] = {
     "constraints": "Constraints:",
     "output_fields": "Output Fields:",
     "safety_limits": "Safety Limits:",
+    "tone_policy": "Tone Policy:",
+    "legal_compliance_boundaries": "Legal/Compliance Boundaries:",
+    "allowed_claims": "Allowed Claims:",
+    "policy_validators": "Policy Validators:",
+    "escalation_instructions": "Escalation Instructions:",
 }
 
 _PROMPT_FALLBACK_TELEMETRY: dict[str, int] = {}
@@ -163,6 +170,12 @@ def _normalize_contract(name: str, prompt_contract: Mapping[str, Any] | None) ->
     for key, value in contract.items():
         normalized[key] = str(value)
     normalized["prompt_schema_version"] = PROMPT_SCHEMA_VERSION
+    normalized["policy_instruction_version"] = str(
+        contract.get("policy_instruction_version", POLICY_INSTRUCTION_VERSION)
+    )
+    normalized["strategy_instruction_version"] = str(
+        contract.get("strategy_instruction_version", STRATEGY_INSTRUCTION_VERSION)
+    )
     normalized["context_schema_version"] = CONTEXT_SCHEMA_VERSION
     normalized["output_model"] = output_model.__name__
     normalized["required_json_fields"] = json.dumps(required_fields)
@@ -179,6 +192,8 @@ def _contract_header(contract: Mapping[str, str]) -> str:
             f"stage_name: {contract['stage_name']}",
             f"policy_mode: {contract['policy_mode']}",
             f"prompt_schema_version: {contract['prompt_schema_version']}",
+            f"policy_instruction_version: {contract['policy_instruction_version']}",
+            f"strategy_instruction_version: {contract['strategy_instruction_version']}",
             f"context_schema_version: {contract['context_schema_version']}",
             f"output_model: {contract['output_model']}",
             f"required_json_fields: {contract['required_json_fields']}",
