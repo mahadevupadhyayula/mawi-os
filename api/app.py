@@ -8,14 +8,17 @@ Provides service-facing interfaces for human-in-the-loop actions while keeping t
 
 from __future__ import annotations
 
-"""Minimal bootstrap module.
+from fastapi import FastAPI
 
-This project exposes API behavior through WorkflowAPI service methods in api/service.py.
-A web framework adapter (FastAPI/Flask) can be layered on top without changing domain logic.
-"""
-
+from api.router import router
 from api.service import WorkflowAPI
 
 
 def create_app_service() -> WorkflowAPI:
     return WorkflowAPI()
+
+
+def create_web_app() -> FastAPI:
+    app = FastAPI(title="MAWI Workflow API")
+    app.include_router(router)
+    return app
