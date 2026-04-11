@@ -197,6 +197,88 @@ Design rule:
 
 👉 context evolves through explicit stage updates so every decision remains inspectable and debuggable.
 
+### Prompt Input Contract (Standardized Across Agents)
+
+All agent prompt renders now require a common contract so behavior can adapt by workflow and stage.
+
+Required contract fields:
+
+- `workflow_id` (defaults to `deal_followup_workflow` when omitted)
+- `workflow_goal`
+- `stage_name`
+- `policy_mode`
+- `expected_output_schema`
+
+If any required key except `workflow_id` is missing, prompt rendering fails fast and prompt execution is blocked.
+
+#### Contract examples by current agent
+
+```json
+{
+  "agent": "signal_agent",
+  "workflow_id": "deal_followup_workflow",
+  "workflow_goal": "Detect stalled-deal triggers for follow-up workflows.",
+  "stage_name": "signal_agent",
+  "policy_mode": "observe_only",
+  "expected_output_schema": "SignalContext(stalled, days_since_reply, urgency, trigger_reason, reasoning, confidence)"
+}
+```
+
+```json
+{
+  "agent": "context_agent",
+  "workflow_id": "deal_followup_workflow",
+  "workflow_goal": "Build normalized deal context for downstream strategy and action agents.",
+  "stage_name": "context_agent",
+  "policy_mode": "observe_only",
+  "expected_output_schema": "DealContext(persona, deal_stage, known_objections, recent_timeline, recommended_tone, reasoning, confidence)"
+}
+```
+
+```json
+{
+  "agent": "strategist_agent",
+  "workflow_id": "deal_followup_workflow",
+  "workflow_goal": "Select a next-best strategy that restarts stalled conversations.",
+  "stage_name": "strategist_agent",
+  "policy_mode": "policy_guided",
+  "expected_output_schema": "DecisionContext(strategy_id, strategy_type, message_goal, fallback_strategy, memory_evidence_used, memory_confidence_impact, memory_rationale, reasoning, confidence)"
+}
+```
+
+```json
+{
+  "agent": "action_agent",
+  "workflow_id": "deal_followup_workflow",
+  "workflow_goal": "Generate an ordered, approval-ready action plan from strategy and deal context.",
+  "stage_name": "action_agent",
+  "policy_mode": "policy_guided",
+  "expected_output_schema": "ActionPlanContext(plan_id, steps[], status, reasoning, confidence)"
+}
+```
+
+```json
+{
+  "agent": "execution_agent",
+  "workflow_id": "deal_followup_workflow",
+  "workflow_goal": "Execute approved action steps through channel adapters with policy enforcement.",
+  "stage_name": "execution_agent",
+  "policy_mode": "enforced",
+  "expected_output_schema": "ExecutionContext(execution_id, status, email_result, crm_result, tool_events, reasoning, confidence)"
+}
+```
+
+```json
+{
+  "agent": "evaluator_agent",
+  "workflow_id": "deal_followup_workflow",
+  "workflow_goal": "Evaluate execution outcomes and produce reusable learning signals.",
+  "stage_name": "evaluator_agent",
+  "policy_mode": "observe_only",
+  "expected_output_schema": "OutcomeContext(outcome_label, insight, recommended_adjustment, reasoning, confidence)"
+}
+```
+
 ---
 
 ## ⚡ Human-in-the-Loop Design

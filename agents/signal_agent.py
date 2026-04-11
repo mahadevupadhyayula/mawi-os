@@ -14,7 +14,15 @@ from context.models import SignalContext
 
 
 def signal_agent(raw_data: dict) -> SignalContext:
-    _ = render_prompt("signal_prompt.txt")
+    _ = render_prompt(
+        "signal_prompt.txt",
+        prompt_contract={
+            "workflow_goal": "Detect stalled-deal triggers for follow-up workflows.",
+            "stage_name": "signal_agent",
+            "policy_mode": "observe_only",
+            "expected_output_schema": "SignalContext(stalled, days_since_reply, urgency, trigger_reason, reasoning, confidence)",
+        },
+    )
     days = int(raw_data.get("days_since_reply", 0))
     stalled = days >= 5
     urgency = "high" if days >= 10 else "medium" if stalled else "low"

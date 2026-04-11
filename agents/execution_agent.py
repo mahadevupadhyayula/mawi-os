@@ -39,7 +39,15 @@ def execution_agent(
     allowed_channels: tuple[str, ...] = ("email", "crm", "sms"),
     max_risk_tier: str = "high",
 ) -> ExecutionContext:
-    _ = render_prompt("execution_prompt.txt")
+    _ = render_prompt(
+        "execution_prompt.txt",
+        prompt_contract={
+            "workflow_goal": "Execute approved action steps through channel adapters with policy enforcement.",
+            "stage_name": "execution_agent",
+            "policy_mode": "enforced",
+            "expected_output_schema": "ExecutionContext(execution_id, status, email_result, crm_result, tool_events, reasoning, confidence)",
+        },
+    )
     if action_plan.status != "approved":
         return ExecutionContext(
             execution_id=str(uuid4()),

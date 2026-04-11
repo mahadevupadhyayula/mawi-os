@@ -18,7 +18,15 @@ def strategist_agent(
     deal_context: DealContext,
     memory_evidence: list[dict] | None = None,
 ) -> DecisionContext:
-    _ = render_prompt("strategist_prompt.txt")
+    _ = render_prompt(
+        "strategist_prompt.txt",
+        prompt_contract={
+            "workflow_goal": "Select a next-best strategy that restarts stalled conversations.",
+            "stage_name": "strategist_agent",
+            "policy_mode": "policy_guided",
+            "expected_output_schema": "DecisionContext(strategy_id, strategy_type, message_goal, fallback_strategy, memory_evidence_used, memory_confidence_impact, memory_rationale, reasoning, confidence)",
+        },
+    )
     baseline_strategy = "roi_framing" if "budget timing" in deal_context.known_objections else "risk_reduction"
     evidence = [item for item in (memory_evidence or []) if isinstance(item, dict)]
     evidence_text = " ".join(item.get("snippet", "").lower() for item in evidence)

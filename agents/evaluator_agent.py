@@ -14,7 +14,15 @@ from context.models import ExecutionContext, OutcomeContext
 
 
 def evaluator_agent(execution_context: ExecutionContext, outcome: ExecutionOutcome) -> OutcomeContext:
-    _ = render_prompt("evaluator_prompt.txt")
+    _ = render_prompt(
+        "evaluator_prompt.txt",
+        prompt_contract={
+            "workflow_goal": "Evaluate execution outcomes and produce reusable learning signals.",
+            "stage_name": "evaluator_agent",
+            "policy_mode": "observe_only",
+            "expected_output_schema": "OutcomeContext(outcome_label, insight, recommended_adjustment, reasoning, confidence)",
+        },
+    )
     if execution_context.status != "executed":
         label = "negative"
         insight = "Execution reliability issues reduced follow-up quality."

@@ -45,7 +45,15 @@ def _subject_and_preview(decision_context: DecisionContext) -> tuple[str, str]:
 
 
 def action_agent(decision_context: DecisionContext, deal_context: DealContext) -> ActionPlanContext:
-    _ = render_prompt("action_prompt.txt")
+    _ = render_prompt(
+        "action_prompt.txt",
+        prompt_contract={
+            "workflow_goal": "Generate an ordered, approval-ready action plan from strategy and deal context.",
+            "stage_name": "action_agent",
+            "policy_mode": "policy_guided",
+            "expected_output_schema": "ActionPlanContext(plan_id, steps[], status, reasoning, confidence)",
+        },
+    )
     subject, preview = _subject_and_preview(decision_context)
     body = (
         f"Hi — following up with a short {decision_context.strategy_type.replace('_', ' ')} summary "
