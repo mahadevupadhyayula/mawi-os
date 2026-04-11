@@ -1,3 +1,11 @@
+"""
+Purpose:
+Implements the Action Agent that generates executable outreach content from decision and deal context.
+
+Technical Details:
+Uses prompt templates plus lightweight persona-aware rules to build structured ActionContext output consumable by approval and execution layers.
+"""
+
 from __future__ import annotations
 
 from uuid import uuid4

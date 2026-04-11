@@ -1,3 +1,11 @@
+"""
+Purpose:
+Tool integration module `deal_tool` for external side effects used by workflows.
+
+Technical Details:
+Wraps provider behavior behind stable interfaces and returns structured execution metadata for deterministic state updates.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

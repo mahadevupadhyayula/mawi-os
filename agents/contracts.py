@@ -1,3 +1,11 @@
+"""
+Purpose:
+Agent module `contracts` for MAWI workflow decisioning/execution responsibilities.
+
+Technical Details:
+Implements typed agent logic that consumes context slices and produces deterministic, schema-aligned outputs for orchestration.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

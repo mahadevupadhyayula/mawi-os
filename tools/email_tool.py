@@ -1,3 +1,11 @@
+"""
+Purpose:
+Provides the email integration surface used by workflows to send follow-up actions.
+
+Technical Details:
+MVP implementation is deterministic/stubbed for safe local runs and returns structured execution results compatible with execution context updates.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

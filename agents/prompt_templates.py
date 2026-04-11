@@ -1,3 +1,11 @@
+"""
+Purpose:
+Agent module `prompt_templates` for MAWI workflow decisioning/execution responsibilities.
+
+Technical Details:
+Implements typed agent logic that consumes context slices and produces deterministic, schema-aligned outputs for orchestration.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

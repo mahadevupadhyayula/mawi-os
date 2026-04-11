@@ -1,3 +1,11 @@
+"""
+Purpose:
+Implements the Signal Agent that interprets deal activity and identifies workflow-triggering events.
+
+Technical Details:
+Combines deterministic inactivity heuristics with typed SignalContext creation so downstream orchestration receives normalized event metadata.
+"""
+
 from __future__ import annotations
 
 from agents.contracts import make_result

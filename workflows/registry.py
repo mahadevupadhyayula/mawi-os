@@ -1,3 +1,11 @@
+"""
+Purpose:
+Workflow module `registry` that defines triggers, registration, or stage flow behavior.
+
+Technical Details:
+Declares composable workflow contracts used by orchestration to run repeatable business processes with typed context.
+"""
+
 from __future__ import annotations
 
 from workflows.deal_followup_workflow import WORKFLOW_NAME, WORKFLOW_STEPS

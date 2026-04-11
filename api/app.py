@@ -1,3 +1,11 @@
+"""
+Purpose:
+API module `app` that exposes workflow operations to callers.
+
+Technical Details:
+Provides service-facing interfaces for human-in-the-loop actions while keeping transport concerns decoupled from domain logic.
+"""
+
 from __future__ import annotations
 
 """Minimal bootstrap module.

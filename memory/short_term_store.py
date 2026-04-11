@@ -1,3 +1,11 @@
+"""
+Purpose:
+Memory module `short_term_store` for storing and retrieving workflow history.
+
+Technical Details:
+Provides short/long-term data access patterns that support personalization, reasoning reuse, and post-run analytics.
+"""
+
 from __future__ import annotations
 
 from dataclasses import asdict
