@@ -9,6 +9,7 @@ Status tags used in this document:
 - **[Implemented]** — meets definition below end-to-end in code.
 - **[Partial]** — some components exist, but not full end-to-end criteria.
 - **[Not Implemented]** — planned only.
+- Status tags must only be promoted based on verified code evidence for all required criteria (no roadmap-only promotion).
 
 ### Definition of Implemented
 
@@ -20,6 +21,15 @@ Evidence references for current MVP implementation:
 - Workflow: [`workflows/deal_followup_workflow.py`](./workflows/deal_followup_workflow.py)
 - Trigger/registry: [`workflows/triggers.py`](./workflows/triggers.py), [`workflows/registry.py`](./workflows/registry.py)
 - Orchestration: [`orchestrator/runner.py`](./orchestrator/runner.py)
+- Execution paths: [`agents/execution_agent.py`](./agents/execution_agent.py), [`tools/email_tool.py`](./tools/email_tool.py), [`tools/crm_tool.py`](./tools/crm_tool.py)
+- Evaluation: [`agents/evaluator_agent.py`](./agents/evaluator_agent.py), [`evaluation/outcome_analyzer.py`](./evaluation/outcome_analyzer.py)
+- Persistence: [`data/repositories/workflow_repo.py`](./data/repositories/workflow_repo.py), [`data/repositories/action_repo.py`](./data/repositories/action_repo.py), [`data/repositories/outcome_repo.py`](./data/repositories/outcome_repo.py)
+
+Status maintenance rule:
+
+- Only mark any workflow/capability as **[Implemented]** once **all five** are present in code:
+  **trigger + orchestration + execution + evaluation + persistence**.
+- Otherwise use **[Partial]** or **[Not Implemented]**.
 
 Roadmap organization:
 
