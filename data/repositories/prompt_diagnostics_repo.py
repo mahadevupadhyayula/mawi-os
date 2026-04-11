@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from datetime import datetime, timezone
 from typing import Any
 
@@ -64,7 +65,7 @@ class PromptDiagnosticsRepository:
                     confidence,
                     now,
                 ),
-            )
+                )
             if trace_sampled and trace_payload is not None:
                 conn.execute(
                     """
@@ -79,6 +80,125 @@ class PromptDiagnosticsRepository:
                     """,
                     (run_id, workflow_id, agent_id, prompt_name, json.dumps(trace_payload, sort_keys=True), now),
                 )
+
+    def assign_variant(self, *, run_id: str, workflow_id: str) -> dict[str, str]:
+        rollout = self._get_or_create_rollout(workflow_id)
+        digest = sha256(f"{workflow_id}:{run_id}".encode("utf-8")).hexdigest()
+        bucket_score = int(digest[:8], 16) / 0xFFFFFFFF
+        bucket = "A" if bucket_score < 0.5 else "B"
+        assigned_variant = bucket
+
+        phase = str(rollout["rollout_phase"])
+        if phase == "shadow":
+            effective_variant = str(rollout["promoted_default_variant"])
+        elif phase == "canary":
+            effective_variant = "B" if bucket_score < float(rollout["canary_percent"]) else "A"
+        elif phase == "full":
+            effective_variant = "B"
+        else:
+            effective_variant = "A"
+
+        now = datetime.now(timezone.utc).isoformat()
+        with self.db.tx() as conn:
+            conn.execute(
+                """
+                INSERT INTO prompt_variant_assignments (
+                    run_id, workflow_id, bucket, assigned_variant, effective_variant, rollout_phase, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id, workflow_id) DO UPDATE SET
+                    bucket=excluded.bucket,
+                    assigned_variant=excluded.assigned_variant,
+                    effective_variant=excluded.effective_variant,
+                    rollout_phase=excluded.rollout_phase
+                """,
+                (run_id, workflow_id, bucket, assigned_variant, effective_variant, phase, now),
+            )
+            conn.execute(
+                """
+                INSERT INTO prompt_variant_metrics (workflow_id, variant, exposures, updated_at)
+                VALUES (?, ?, 1, ?)
+                ON CONFLICT(workflow_id, variant) DO UPDATE SET
+                    exposures=prompt_variant_metrics.exposures + 1,
+                    updated_at=excluded.updated_at
+                """,
+                (workflow_id, effective_variant, now),
+            )
+        return {"bucket": bucket, "assigned_variant": assigned_variant, "effective_variant": effective_variant, "rollout_phase": phase}
+
+    def record_outcome_metrics(
+        self,
+        *,
+        run_id: str,
+        reply_received: bool,
+        meeting_booked: bool,
+        execution_success: bool,
+    ) -> None:
+        with self.db.tx() as conn:
+            row = conn.execute(
+                """
+                SELECT workflow_id, effective_variant
+                FROM prompt_variant_assignments
+                WHERE run_id=?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+            if not row:
+                return
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                """
+                INSERT INTO prompt_variant_metrics (
+                    workflow_id, variant, exposures, replies, meetings, execution_successes, rejections, updated_at
+                ) VALUES (?, ?, 0, ?, ?, ?, 0, ?)
+                ON CONFLICT(workflow_id, variant) DO UPDATE SET
+                    exposures=prompt_variant_metrics.exposures + 1,
+                    replies=prompt_variant_metrics.replies + excluded.replies,
+                    meetings=prompt_variant_metrics.meetings + excluded.meetings,
+                    execution_successes=prompt_variant_metrics.execution_successes + excluded.execution_successes,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    str(row["workflow_id"]),
+                    str(row["effective_variant"]),
+                    1 if reply_received else 0,
+                    1 if meeting_booked else 0,
+                    1 if execution_success else 0,
+                    now,
+                ),
+            )
+            self._evaluate_rollout_health(conn, workflow_id=str(row["workflow_id"]))
+
+    def record_rejection(self, *, action_id: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self.db.tx() as conn:
+            row = conn.execute(
+                """
+                SELECT a.run_id, p.workflow_id, p.effective_variant
+                FROM actions a
+                JOIN prompt_variant_assignments p ON p.run_id = a.run_id
+                WHERE a.action_id=?
+                ORDER BY p.id DESC
+                LIMIT 1
+                """,
+                (action_id,),
+            ).fetchone()
+            if not row:
+                return
+            conn.execute(
+                """
+                INSERT INTO prompt_variant_metrics (
+                    workflow_id, variant, exposures, replies, meetings, execution_successes, rejections, updated_at
+                ) VALUES (?, ?, 0, 0, 0, 0, 1, ?)
+                ON CONFLICT(workflow_id, variant) DO UPDATE SET
+                    exposures=prompt_variant_metrics.exposures + 1,
+                    rejections=prompt_variant_metrics.rejections + 1,
+                    updated_at=excluded.updated_at
+                """,
+                (str(row["workflow_id"]), str(row["effective_variant"]), now),
+            )
+            self._evaluate_rollout_health(conn, workflow_id=str(row["workflow_id"]))
 
     def increment_counter(self, *, metric_name: str, metric_value: int = 1) -> None:
         with self.db.tx() as conn:
@@ -137,6 +257,29 @@ class PromptDiagnosticsRepository:
                 """,
                 (limit,),
             ).fetchall()
+            rollout_rows = conn.execute(
+                """
+                SELECT workflow_id, rollout_phase, canary_percent, promoted_default_variant, updated_at
+                FROM prompt_variant_rollouts
+                ORDER BY workflow_id ASC
+                """
+            ).fetchall()
+            variant_rows = conn.execute(
+                """
+                SELECT workflow_id, variant, exposures, replies, meetings, execution_successes, rejections, updated_at
+                FROM prompt_variant_metrics
+                ORDER BY workflow_id ASC, variant ASC
+                """
+            ).fetchall()
+            changelog_rows = conn.execute(
+                """
+                SELECT workflow_id, change_type, previous_value, new_value, note, created_at
+                FROM prompt_variant_changelog
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
 
         confidence_distribution = {str(row["band"]): int(row["count"]) for row in confidence_rows}
         outcome_correlation = [
@@ -161,6 +304,21 @@ class PromptDiagnosticsRepository:
         ]
 
         fallback_rate = (fallback_count / total) if total else 0.0
+        rollout_state = [dict(row) for row in rollout_rows]
+        variant_metrics = [
+            {
+                "workflow_id": str(row["workflow_id"]),
+                "variant": str(row["variant"]),
+                "exposures": int(row["exposures"]),
+                "reply_rate": (int(row["replies"]) / int(row["exposures"])) if int(row["exposures"]) else 0.0,
+                "meeting_rate": (int(row["meetings"]) / int(row["exposures"])) if int(row["exposures"]) else 0.0,
+                "execution_success_rate": (int(row["execution_successes"]) / int(row["exposures"])) if int(row["exposures"]) else 0.0,
+                "rejection_rate": (int(row["rejections"]) / int(row["exposures"])) if int(row["exposures"]) else 0.0,
+                "updated_at": str(row["updated_at"]),
+            }
+            for row in variant_rows
+        ]
+        changelog = [dict(row) for row in changelog_rows]
         return {
             "summary": {
                 "total_prompt_runs": total,
@@ -176,6 +334,11 @@ class PromptDiagnosticsRepository:
                 "confidence_distribution": confidence_distribution,
                 "outcome_correlation": outcome_correlation,
             },
+            "experiments": {
+                "rollouts": rollout_state,
+                "variant_metrics": variant_metrics,
+                "promotion_changelog": changelog,
+            },
             "sampled_traces": traces,
         }
 
@@ -187,3 +350,92 @@ class PromptDiagnosticsRepository:
         if row is None:
             return 0
         return int(row["metric_value"] or 0)
+
+    def _get_or_create_rollout(self, workflow_id: str) -> dict[str, Any]:
+        now = datetime.now(timezone.utc).isoformat()
+        with self.db.tx() as conn:
+            conn.execute(
+                """
+                INSERT INTO prompt_variant_rollouts (
+                    workflow_id, rollout_phase, canary_percent,
+                    degradation_reply_threshold, degradation_meeting_threshold,
+                    degradation_execution_threshold, degradation_rejection_threshold,
+                    promoted_default_variant, updated_at
+                ) VALUES (?, 'shadow', 0.1, 0.05, 0.03, 0.05, 0.05, 'A', ?)
+                ON CONFLICT(workflow_id) DO NOTHING
+                """,
+                (workflow_id, now),
+            )
+            row = conn.execute("SELECT * FROM prompt_variant_rollouts WHERE workflow_id=?", (workflow_id,)).fetchone()
+        return dict(row) if row else {"workflow_id": workflow_id, "rollout_phase": "shadow", "canary_percent": 0.1, "promoted_default_variant": "A"}
+
+    def _evaluate_rollout_health(self, conn: Any, *, workflow_id: str) -> None:
+        rollout = conn.execute("SELECT * FROM prompt_variant_rollouts WHERE workflow_id=?", (workflow_id,)).fetchone()
+        if not rollout:
+            return
+        metrics_rows = conn.execute(
+            "SELECT * FROM prompt_variant_metrics WHERE workflow_id=?",
+            (workflow_id,),
+        ).fetchall()
+        metrics = {str(row["variant"]): row for row in metrics_rows}
+        control = metrics.get("A")
+        candidate = metrics.get("B")
+        if control is None or candidate is None or int(candidate["exposures"]) < 10:
+            if control is not None and str(rollout["rollout_phase"]) == "shadow" and int(control["exposures"]) >= 20:
+                now = datetime.now(timezone.utc).isoformat()
+                conn.execute(
+                    "UPDATE prompt_variant_rollouts SET rollout_phase='canary', updated_at=? WHERE workflow_id=?",
+                    (now, workflow_id),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO prompt_variant_changelog (workflow_id, change_type, previous_value, new_value, note, created_at)
+                    VALUES (?, 'phase_advance', ?, 'canary', 'Advanced from shadow mode to low-traffic canary.', ?)
+                    """,
+                    (workflow_id, str(rollout["rollout_phase"]), now),
+                )
+            return
+
+        def rate(row: Any, key: str) -> float:
+            exposures = max(int(row["exposures"]), 1)
+            return float(row[key]) / exposures
+
+        degraded = (
+            rate(control, "replies") - rate(candidate, "replies") > float(rollout["degradation_reply_threshold"])
+            or rate(control, "meetings") - rate(candidate, "meetings") > float(rollout["degradation_meeting_threshold"])
+            or rate(control, "execution_successes") - rate(candidate, "execution_successes") > float(rollout["degradation_execution_threshold"])
+            or rate(candidate, "rejections") - rate(control, "rejections") > float(rollout["degradation_rejection_threshold"])
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        if degraded and str(rollout["rollout_phase"]) != "shadow":
+            conn.execute(
+                "UPDATE prompt_variant_rollouts SET rollout_phase='shadow', promoted_default_variant='A', updated_at=? WHERE workflow_id=?",
+                (now, workflow_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO prompt_variant_changelog (workflow_id, change_type, previous_value, new_value, note, created_at)
+                VALUES (?, 'auto_rollback', ?, 'shadow:A', 'Automatic rollback triggered by degradation thresholds.', ?)
+                """,
+                (workflow_id, f"{rollout['rollout_phase']}:{rollout['promoted_default_variant']}", now),
+            )
+            return
+
+        better = (
+            rate(candidate, "replies") >= rate(control, "replies")
+            and rate(candidate, "meetings") >= rate(control, "meetings")
+            and rate(candidate, "execution_successes") >= rate(control, "execution_successes")
+            and rate(candidate, "rejections") <= rate(control, "rejections")
+        )
+        if better and int(candidate["exposures"]) >= 25 and str(rollout["promoted_default_variant"]) != "B":
+            conn.execute(
+                "UPDATE prompt_variant_rollouts SET promoted_default_variant='B', rollout_phase='full', updated_at=? WHERE workflow_id=?",
+                (now, workflow_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO prompt_variant_changelog (workflow_id, change_type, previous_value, new_value, note, created_at)
+                VALUES (?, 'promotion', ?, 'full:B', 'Promoted winning B variant to default after sustained improvement.', ?)
+                """,
+                (workflow_id, f"{rollout['rollout_phase']}:{rollout['promoted_default_variant']}", now),
+            )

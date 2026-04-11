@@ -12,7 +12,7 @@ from dataclasses import asdict
 from typing import Any, Dict, List
 
 from agents.contracts import ExecutionOutcome
-from agents.prompt_templates import get_prompt_diagnostics_report
+from agents.prompt_templates import attach_prompt_rejection, get_prompt_diagnostics_report
 from approval.action_lifecycle import approve, edit, reject
 from context.models import (
     ActionContext,
@@ -99,6 +99,7 @@ class WorkflowAPI:
         updated = reject(action, approver, reason)
         self.orchestrator.queue.enqueue(updated)
         self.orchestrator.action_repo.set_rejected(action_id, approver, reason, step_id=step_id)
+        attach_prompt_rejection(action_id=action_id)
 
         deal_id = self._find_deal_for_action(action_id)
         envelope = self._load_envelope(deal_id)

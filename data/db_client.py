@@ -217,6 +217,52 @@ class DBClient:
                     metric_name TEXT PRIMARY KEY,
                     metric_value INTEGER NOT NULL DEFAULT 0
                 );
+
+                CREATE TABLE IF NOT EXISTS prompt_variant_assignments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    workflow_id TEXT NOT NULL,
+                    bucket TEXT NOT NULL,
+                    assigned_variant TEXT NOT NULL,
+                    effective_variant TEXT NOT NULL,
+                    rollout_phase TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(run_id, workflow_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS prompt_variant_rollouts (
+                    workflow_id TEXT PRIMARY KEY,
+                    rollout_phase TEXT NOT NULL DEFAULT 'shadow',
+                    canary_percent REAL NOT NULL DEFAULT 0.1,
+                    degradation_reply_threshold REAL NOT NULL DEFAULT 0.05,
+                    degradation_meeting_threshold REAL NOT NULL DEFAULT 0.03,
+                    degradation_execution_threshold REAL NOT NULL DEFAULT 0.05,
+                    degradation_rejection_threshold REAL NOT NULL DEFAULT 0.05,
+                    promoted_default_variant TEXT NOT NULL DEFAULT 'A',
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS prompt_variant_metrics (
+                    workflow_id TEXT NOT NULL,
+                    variant TEXT NOT NULL,
+                    exposures INTEGER NOT NULL DEFAULT 0,
+                    replies INTEGER NOT NULL DEFAULT 0,
+                    meetings INTEGER NOT NULL DEFAULT 0,
+                    execution_successes INTEGER NOT NULL DEFAULT 0,
+                    rejections INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (workflow_id, variant)
+                );
+
+                CREATE TABLE IF NOT EXISTS prompt_variant_changelog (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    workflow_id TEXT NOT NULL,
+                    change_type TEXT NOT NULL,
+                    previous_value TEXT,
+                    new_value TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 """
             )
             self._ensure_column(conn, "action_steps", "retry_count", "INTEGER NOT NULL DEFAULT 0")

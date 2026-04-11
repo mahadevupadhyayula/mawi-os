@@ -308,6 +308,7 @@ def render_prompt(name: str, *, prompt_contract: Mapping[str, Any] | None = None
         contract = _normalize_contract(name, prompt_contract)
         workflow_id = contract["workflow_id"]
         agent_id = str(contract.get("agent_id") or contract.get("stage_name") or agent_id)
+        _PROMPT_DIAGNOSTICS_REPO.assign_variant(run_id=run_id, workflow_id=workflow_id)
         prompt_path, resolved_profile_id, fallback_used = _resolve_prompt_path(name, contract["workflow_id"])
         profile_id = resolved_profile_id
         profile_version = _resolve_profile_version(profile_id)
@@ -390,3 +391,22 @@ def get_prompt_diagnostics_report(*, limit: int = 25) -> dict[str, Any]:
 
 def attach_prompt_outcome(*, run_id: str, outcome_label: str) -> None:
     _PROMPT_DIAGNOSTICS_REPO.attach_outcome_label(run_id=run_id, outcome_label=outcome_label)
+
+
+def attach_prompt_outcome_metrics(
+    *,
+    run_id: str,
+    reply_received: bool,
+    meeting_booked: bool,
+    execution_success: bool,
+) -> None:
+    _PROMPT_DIAGNOSTICS_REPO.record_outcome_metrics(
+        run_id=run_id,
+        reply_received=reply_received,
+        meeting_booked=meeting_booked,
+        execution_success=execution_success,
+    )
+
+
+def attach_prompt_rejection(*, action_id: str) -> None:
+    _PROMPT_DIAGNOSTICS_REPO.record_rejection(action_id=action_id)
