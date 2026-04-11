@@ -12,20 +12,33 @@ from uuid import uuid4
 
 from agents.contracts import make_result
 from agents.prompt_templates import render_prompt
+from approval.policy import validate_step_channel_policy
 from context.models import ActionPlanContext, ActionStep, ExecutionContext
 from tools.crm_tool import update_crm
 from tools.email_tool import send_email
+from tools.sms_tool import send_sms
 
 
 def _execute_step(step: ActionStep, *, deal_id: str, contact_name: str) -> dict:
-    if step.channel == "email" and step.action_type == "send_email":
-        return send_email(to_name=contact_name, subject=step.subject, body=step.body_draft)
-    if step.channel == "crm" and step.action_type == "update_crm":
-        return update_crm(deal_id=deal_id, note=step.body_draft, message_id=f"plan-step-{step.step_id}")
+    dispatch = {
+        ("email", "send_email"): lambda: send_email(to_name=contact_name, subject=step.subject, body=step.body_draft),
+        ("crm", "update_crm"): lambda: update_crm(deal_id=deal_id, note=step.body_draft, message_id=f"plan-step-{step.step_id}"),
+        ("sms", "send_sms"): lambda: send_sms(to_name=contact_name, body=step.body_draft),
+    }
+    executor = dispatch.get((step.channel, step.action_type))
+    if executor:
+        return executor()
     return {"success": False, "error": "unsupported_step", "channel": step.channel, "action_type": step.action_type}
 
 
-def execution_agent(action_plan: ActionPlanContext, *, deal_id: str, contact_name: str) -> ExecutionContext:
+def execution_agent(
+    action_plan: ActionPlanContext,
+    *,
+    deal_id: str,
+    contact_name: str,
+    allowed_channels: tuple[str, ...] = ("email", "crm", "sms"),
+    max_risk_tier: str = "high",
+) -> ExecutionContext:
     _ = render_prompt("execution_prompt.txt")
     if action_plan.status != "approved":
         return ExecutionContext(
@@ -42,6 +55,55 @@ def execution_agent(action_plan: ActionPlanContext, *, deal_id: str, contact_nam
     tool_events: list[dict] = []
     step_results: list[dict] = []
     for step in ordered_steps:
+        policy_decision = validate_step_channel_policy(
+            step,
+            allowed_channels=allowed_channels,
+            max_risk_tier=max_risk_tier,
+        )
+        channel_metadata = {
+            "policy": {
+                "allowed_channels": list(allowed_channels),
+                "max_risk_tier": max_risk_tier,
+                "channel_risk_tier": policy_decision.risk_tier,
+            }
+        }
+        if not policy_decision.allowed:
+            receipt = {
+                "success": False,
+                "error": policy_decision.reason,
+                "channel": policy_decision.channel,
+                "risk_tier": policy_decision.risk_tier,
+                "channel_metadata": channel_metadata,
+            }
+            event_type = "blocked_by_policy"
+            step.retry_count += 1
+            step.execution_result = receipt
+            step.status = "failed"
+            step.last_error = policy_decision.reason
+            step_results.append(
+                {
+                    "step_id": step.step_id,
+                    "order": step.order,
+                    "channel": step.channel,
+                    "action_type": step.action_type,
+                    "status": step.status,
+                    "retry_count": step.retry_count,
+                    "receipt": receipt,
+                }
+            )
+            tool_events.append(
+                {
+                    "step_id": step.step_id,
+                    "order": step.order,
+                    "tool": step.action_type,
+                    "channel": step.channel,
+                    "success": False,
+                    "event_type": event_type,
+                    "channel_metadata": channel_metadata,
+                }
+            )
+            continue
+
         if step.status == "executed" and step.execution_result.get("success"):
             receipt = dict(step.execution_result)
             event_type = "already_executed"
@@ -67,6 +129,8 @@ def execution_agent(action_plan: ActionPlanContext, *, deal_id: str, contact_nam
                 "receipt": receipt,
             }
         )
+        receipt_metadata = receipt.get("channel_metadata", {})
+        merged_channel_metadata = {**channel_metadata, **receipt_metadata}
         tool_events.append(
             {
                 "step_id": step.step_id,
@@ -75,6 +139,7 @@ def execution_agent(action_plan: ActionPlanContext, *, deal_id: str, contact_nam
                 "channel": step.channel,
                 "success": bool(receipt.get("success")),
                 "event_type": event_type,
+                "channel_metadata": merged_channel_metadata,
             }
         )
     all_success = all(evt["success"] for evt in tool_events) if tool_events else False
@@ -85,13 +150,14 @@ def execution_agent(action_plan: ActionPlanContext, *, deal_id: str, contact_nam
 
     email_receipt = next((item["receipt"] for item in step_results if item["channel"] == "email"), {})
     crm_receipt = next((item["receipt"] for item in step_results if item["channel"] == "crm"), {})
+    sms_receipt = next((item["receipt"] for item in step_results if item["channel"] == "sms"), {})
     result = make_result(
         ExecutionContext(
             execution_id=str(uuid4()),
             status=status,
             email_result=email_receipt,
             crm_result=crm_receipt,
-            tool_events=tool_events + [{"by_step": step_results}],
+            tool_events=tool_events + [{"by_step": step_results, "channel_results": {"sms": sms_receipt}}],
             reasoning=reasoning,
             confidence=confidence,
         ),

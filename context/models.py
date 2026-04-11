@@ -78,7 +78,7 @@ class ActionContext(SectionBase):
 class ActionStep:
     step_id: str
     order: int
-    channel: Literal["email", "crm"] = "email"
+    channel: Literal["email", "crm", "sms"] = "email"
     action_type: str = "send_email"
     subject: str = ""
     preview: str = ""
