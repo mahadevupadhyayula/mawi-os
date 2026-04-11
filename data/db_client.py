@@ -183,6 +183,40 @@ class DBClient:
                     FOREIGN KEY (run_id) REFERENCES workflow_runs(run_id),
                     FOREIGN KEY (deal_id) REFERENCES deals(deal_id)
                 );
+
+
+                CREATE TABLE IF NOT EXISTS prompt_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    workflow_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    prompt_name TEXT NOT NULL,
+                    prompt_profile_id TEXT NOT NULL,
+                    prompt_profile_version TEXT NOT NULL,
+                    prompt_schema_version TEXT NOT NULL,
+                    latency_ms INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    error_type TEXT,
+                    fallback_used INTEGER NOT NULL DEFAULT 0,
+                    confidence REAL,
+                    outcome_label TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS prompt_traces (
+                    trace_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    workflow_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    prompt_name TEXT NOT NULL,
+                    trace_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS prompt_counters (
+                    metric_name TEXT PRIMARY KEY,
+                    metric_value INTEGER NOT NULL DEFAULT 0
+                );
                 """
             )
             self._ensure_column(conn, "action_steps", "retry_count", "INTEGER NOT NULL DEFAULT 0")

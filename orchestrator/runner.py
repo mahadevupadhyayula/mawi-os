@@ -19,6 +19,7 @@ from agents.evaluator_agent import evaluator_agent
 from agents.execution_agent import execution_agent
 from agents.signal_agent import signal_agent
 from agents.strategist_agent import strategist_agent
+from agents.prompt_templates import attach_prompt_outcome
 from agents.contracts import ExecutionOutcome
 from approval.policy import requires_approval
 from approval.queue import ApprovalQueue
@@ -177,7 +178,11 @@ class WorkflowOrchestrator:
 
     def _execute_workflow_step(self, workflow_id: str, step: str, deal_id: str, run_id: str, envelope: ContextEnvelope) -> bool:
         if step == "signal_agent":
-            signal = self._execute_with_step_audit(workflow_id=workflow_id, step=step, fn=lambda: signal_agent(envelope.raw_data))
+            signal = self._execute_with_step_audit(
+                workflow_id=workflow_id,
+                step=step,
+                fn=lambda: signal_agent(envelope.raw_data, workflow_id=workflow_id, run_id=run_id),
+            )
             append_or_refine_section(envelope, agent_name="signal_agent", section_value=signal)
             set_stage(envelope, "signal_done")
             self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
@@ -188,7 +193,12 @@ class WorkflowOrchestrator:
             deal = self._execute_with_step_audit(
                 workflow_id=workflow_id,
                 step=step,
-                fn=lambda: context_agent(envelope.raw_data, envelope.signal_context),
+                fn=lambda: context_agent(
+                    envelope.raw_data,
+                    envelope.signal_context,
+                    workflow_id=workflow_id,
+                    run_id=run_id,
+                ),
             )
             append_or_refine_section(envelope, agent_name="context_agent", section_value=deal)
             set_stage(envelope, "context_done")
@@ -207,7 +217,13 @@ class WorkflowOrchestrator:
             decision = self._execute_with_step_audit(
                 workflow_id=workflow_id,
                 step=step,
-                fn=lambda: strategist_agent(envelope.signal_context, envelope.deal_context, memory_evidence),
+                fn=lambda: strategist_agent(
+                    envelope.signal_context,
+                    envelope.deal_context,
+                    memory_evidence,
+                    workflow_id=workflow_id,
+                    run_id=run_id,
+                ),
             )
             append_or_refine_section(envelope, agent_name="strategist_agent", section_value=decision)
             set_stage(envelope, "strategy_done")
@@ -226,7 +242,12 @@ class WorkflowOrchestrator:
             action_plan = self._execute_with_step_audit(
                 workflow_id=workflow_id,
                 step=step,
-                fn=lambda: action_agent(envelope.decision_context, envelope.deal_context),
+                fn=lambda: action_agent(
+                    envelope.decision_context,
+                    envelope.deal_context,
+                    workflow_id=workflow_id,
+                    run_id=run_id,
+                ),
             )
             if not action_plan.steps:
                 raise ValueError("action_agent returned an empty action plan")
@@ -328,6 +349,8 @@ class WorkflowOrchestrator:
                     action_plan,
                     deal_id=envelope.meta.deal_id,
                     contact_name=envelope.raw_data.get("contact_name", "Prospect"),
+                    workflow_id="deal_followup_workflow",
+                    run_id=run_id,
                 ),
             )
         except Exception as exc:  # noqa: BLE001
@@ -347,7 +370,12 @@ class WorkflowOrchestrator:
             outcome_ctx = self._execute_with_step_audit(
                 workflow_id="resume_after_approval",
                 step="evaluator_agent",
-                fn=lambda: evaluator_agent(execution, outcome),
+                fn=lambda: evaluator_agent(
+                    execution,
+                    outcome,
+                    workflow_id="deal_followup_workflow",
+                    run_id=run_id,
+                ),
             )
         except Exception as exc:  # noqa: BLE001
             if run_id:
@@ -358,6 +386,7 @@ class WorkflowOrchestrator:
         set_stage(envelope, "evaluation_done")
         if run_id:
             self.outcome_repo.record_outcome(run_id, envelope.meta.deal_id, action_ctx.action_id, outcome_ctx)
+            attach_prompt_outcome(run_id=run_id, outcome_label=outcome_ctx.outcome_label)
             persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
             memory_insight = f"{outcome_ctx.insight} | {_memory_influence_summary(envelope)}"
             self.outcome_repo.add_persona_insight(persona, memory_insight, outcome_ctx.confidence)

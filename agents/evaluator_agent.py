@@ -13,7 +13,13 @@ from agents.prompt_templates import render_prompt
 from context.models import ExecutionContext, OutcomeContext
 
 
-def evaluator_agent(execution_context: ExecutionContext, outcome: ExecutionOutcome) -> OutcomeContext:
+def evaluator_agent(
+    execution_context: ExecutionContext,
+    outcome: ExecutionOutcome,
+    *,
+    workflow_id: str = "deal_followup_workflow",
+    run_id: str | None = None,
+) -> OutcomeContext:
     _ = render_prompt(
         "evaluator_prompt.txt",
         prompt_contract={
@@ -21,6 +27,9 @@ def evaluator_agent(execution_context: ExecutionContext, outcome: ExecutionOutco
             "stage_name": "evaluator_agent",
             "policy_mode": "observe_only",
             "output_model": OutcomeContext,
+            "workflow_id": workflow_id,
+            "run_id": run_id or "adhoc-run",
+            "agent_id": "evaluator_agent",
         },
     )
     if execution_context.status != "executed":

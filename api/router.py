@@ -14,6 +14,7 @@ from api.schemas import (
     DealStateResponse,
     EditActionRequest,
     ErrorResponse,
+    PromptDiagnosticsResponse,
     RejectActionRequest,
     RunSummaryResponse,
     StartWorkflowRequest,
@@ -179,3 +180,15 @@ def get_run_summary(
         return service.get_run_summary(deal_id=deal_id, run_id=run_id)
     except ValueError as exc:
         return _error_response(status.HTTP_404_NOT_FOUND, "run_summary_not_found", str(exc))
+
+
+@router.get(
+    "/prompts/diagnostics",
+    response_model=PromptDiagnosticsResponse,
+    summary="Fetch aggregated prompt diagnostics, performance metrics, and sampled traces",
+)
+def get_prompt_diagnostics(
+    limit: int = Query(default=25, ge=1, le=200),
+    service: WorkflowAPI = Depends(get_service),
+) -> dict[str, Any]:
+    return service.get_prompt_diagnostics(limit=limit)

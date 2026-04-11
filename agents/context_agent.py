@@ -13,7 +13,13 @@ from agents.prompt_templates import render_prompt
 from context.models import DealContext, SignalContext
 
 
-def context_agent(raw_data: dict, signal_context: SignalContext) -> DealContext:
+def context_agent(
+    raw_data: dict,
+    signal_context: SignalContext,
+    *,
+    workflow_id: str = "deal_followup_workflow",
+    run_id: str | None = None,
+) -> DealContext:
     _ = render_prompt(
         "context_prompt.txt",
         prompt_contract={
@@ -21,6 +27,9 @@ def context_agent(raw_data: dict, signal_context: SignalContext) -> DealContext:
             "stage_name": "context_agent",
             "policy_mode": "observe_only",
             "output_model": DealContext,
+            "workflow_id": workflow_id,
+            "run_id": run_id or "adhoc-run",
+            "agent_id": "context_agent",
         },
     )
     reasoning = "Built persona and objection context from deal snapshot and signal."

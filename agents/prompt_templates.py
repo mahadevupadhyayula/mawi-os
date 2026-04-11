@@ -9,12 +9,15 @@ Implements typed agent logic that consumes context slices and produces determini
 from __future__ import annotations
 
 import json
+import random
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 import re
 from string import Template
 from threading import Lock
+import time
 from typing import Any, Mapping
+from uuid import uuid4
 
 from context.models import (
     CONTEXT_SCHEMA_VERSION,
@@ -26,6 +29,7 @@ from context.models import (
     SignalContext,
 )
 from workflows.registry import DEFAULT_WORKFLOW_NAME, get_registered_workflow_names, is_known_workflow
+from data.repositories import PromptDiagnosticsRepository
 
 PROMPT_DIR = Path(__file__).parent / "prompts"
 COMMON_PROMPT_PROFILE = "common"
@@ -59,6 +63,8 @@ PROMPT_REQUIRED_SECTIONS: dict[str, str] = {
 _PROMPT_FALLBACK_TELEMETRY: dict[str, int] = {}
 _PROMPT_TELEMETRY_LOCK = Lock()
 _TEMPLATE_TOKEN_PATTERN = re.compile(r"\$\{([_a-zA-Z][_a-zA-Z0-9]*)\}|\$([_a-zA-Z][_a-zA-Z0-9]*)")
+_TRACE_SAMPLE_RATE = 0.2
+_PROMPT_DIAGNOSTICS_REPO = PromptDiagnosticsRepository()
 
 
 class PromptLintError(ValueError):
@@ -80,15 +86,16 @@ def load_prompt_manifest() -> dict[str, Any]:
     return json.loads(PROMPT_MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
-def _resolve_prompt_path(name: str, workflow_id: str) -> Path:
+def _resolve_prompt_path(name: str, workflow_id: str) -> tuple[Path, str, bool]:
     workflow_prompt_path = PROMPT_DIR / workflow_id / name
     if workflow_prompt_path.exists():
-        return workflow_prompt_path
+        return workflow_prompt_path, workflow_id, False
 
     common_prompt_path = PROMPT_DIR / COMMON_PROMPT_PROFILE / name
     if common_prompt_path.exists():
         _record_prompt_fallback_event(workflow_id=workflow_id, prompt_name=name, reason="missing_workflow_prompt")
-        return common_prompt_path
+        _PROMPT_DIAGNOSTICS_REPO.increment_counter(metric_name="fallback_events")
+        return common_prompt_path, COMMON_PROMPT_PROFILE, True
 
     raise FileNotFoundError(
         f"Unable to resolve prompt template '{name}' for workflow '{workflow_id}'. "
@@ -97,8 +104,21 @@ def _resolve_prompt_path(name: str, workflow_id: str) -> Path:
 
 
 def load_prompt(name: str, workflow_id: str) -> str:
-    path = _resolve_prompt_path(name, workflow_id)
+    path, _, _ = _resolve_prompt_path(name, workflow_id)
     return path.read_text(encoding="utf-8")
+
+
+def _resolve_profile_version(profile_id: str) -> str:
+    manifest = load_prompt_manifest()
+    profiles = manifest.get("profiles", {})
+    profile = profiles.get(profile_id, {})
+    return str(profile.get("version", manifest.get("manifest_version", "unknown")))
+
+
+def _sanitize_trace_text(text: str) -> str:
+    scrubbed = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "<redacted_email>", text)
+    scrubbed = re.sub(r"\b\d{8,}\b", "<redacted_id>", scrubbed)
+    return scrubbed
 
 
 def _required_json_fields(output_model: type) -> list[str]:
@@ -277,26 +297,96 @@ def validate_prompt_health_report(report: Mapping[str, Any]) -> None:
 
 
 def render_prompt(name: str, *, prompt_contract: Mapping[str, Any] | None = None, **kwargs: str) -> str:
-    contract = _normalize_contract(name, prompt_contract)
-    prompt_text = load_prompt(name, contract["workflow_id"])
-    declared_schema = _extract_prompt_schema_version(prompt_text, name)
-    compatible_context_versions = SCHEMA_COMPATIBILITY_MATRIX.get(declared_schema, set())
-    if CONTEXT_SCHEMA_VERSION not in compatible_context_versions:
-        raise ValueError(
-            f"Prompt schema '{declared_schema}' is not compatible with context schema '{CONTEXT_SCHEMA_VERSION}'."
+    started = time.perf_counter()
+    run_id = str((prompt_contract or {}).get("run_id") or uuid4())
+    workflow_id = str((prompt_contract or {}).get("workflow_id") or DEFAULT_WORKFLOW_NAME)
+    agent_id = str((prompt_contract or {}).get("agent_id") or (prompt_contract or {}).get("stage_name") or "unknown_agent")
+    profile_id = workflow_id
+    profile_version = _resolve_profile_version(profile_id)
+    fallback_used = False
+    try:
+        contract = _normalize_contract(name, prompt_contract)
+        workflow_id = contract["workflow_id"]
+        agent_id = str(contract.get("agent_id") or contract.get("stage_name") or agent_id)
+        prompt_path, resolved_profile_id, fallback_used = _resolve_prompt_path(name, contract["workflow_id"])
+        profile_id = resolved_profile_id
+        profile_version = _resolve_profile_version(profile_id)
+        prompt_text = prompt_path.read_text(encoding="utf-8")
+        declared_schema = _extract_prompt_schema_version(prompt_text, name)
+        compatible_context_versions = SCHEMA_COMPATIBILITY_MATRIX.get(declared_schema, set())
+        if CONTEXT_SCHEMA_VERSION not in compatible_context_versions:
+            _PROMPT_DIAGNOSTICS_REPO.increment_counter(metric_name="schema_validation_errors")
+            raise ValueError(
+                f"Prompt schema '{declared_schema}' is not compatible with context schema '{CONTEXT_SCHEMA_VERSION}'."
+            )
+
+        render_variables = {**contract, **kwargs}
+        lint_errors = lint_prompt_template(
+            template_name=name,
+            workflow_id=contract["workflow_id"],
+            template_text=prompt_text,
+            render_variables=render_variables,
+            extra_render_keys=set(kwargs.keys()),
         )
+        if lint_errors:
+            _PROMPT_DIAGNOSTICS_REPO.increment_counter(metric_name="schema_validation_errors")
+            raise PromptLintError("; ".join(lint_errors))
 
-    render_variables = {**contract, **kwargs}
-    lint_errors = lint_prompt_template(
-        template_name=name,
-        workflow_id=contract["workflow_id"],
-        template_text=prompt_text,
-        render_variables=render_variables,
-        extra_render_keys=set(kwargs.keys()),
-    )
-    if lint_errors:
-        raise PromptLintError("; ".join(lint_errors))
+        template = Template(prompt_text)
+        rendered_body = template.substitute(**render_variables)
+        rendered = f"{_contract_header(contract)}\n\n{rendered_body}"
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        sampled = random.random() < _TRACE_SAMPLE_RATE
+        trace_payload = (
+            {
+                "contract": contract,
+                "render_kwargs": {key: str(value) for key, value in kwargs.items()},
+                "rendered_prompt": _sanitize_trace_text(rendered),
+            }
+            if sampled
+            else None
+        )
+        _PROMPT_DIAGNOSTICS_REPO.log_render_event(
+            run_id=run_id,
+            workflow_id=contract["workflow_id"],
+            agent_id=agent_id,
+            prompt_name=name,
+            prompt_profile_id=profile_id,
+            prompt_profile_version=profile_version,
+            prompt_schema_version=declared_schema,
+            latency_ms=latency_ms,
+            status="success",
+            fallback_used=fallback_used,
+            confidence=float(kwargs["confidence"]) if "confidence" in kwargs else None,
+            trace_sampled=sampled,
+            trace_payload=trace_payload,
+        )
+        return rendered
+    except KeyError:
+        _PROMPT_DIAGNOSTICS_REPO.increment_counter(metric_name="parse_failures")
+        raise
+    except Exception as exc:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        _PROMPT_DIAGNOSTICS_REPO.log_render_event(
+            run_id=run_id,
+            workflow_id=workflow_id,
+            agent_id=agent_id,
+            prompt_name=name,
+            prompt_profile_id=profile_id,
+            prompt_profile_version=profile_version,
+            prompt_schema_version=PROMPT_SCHEMA_VERSION,
+            latency_ms=latency_ms,
+            status="error",
+            fallback_used=fallback_used,
+            error_type=exc.__class__.__name__,
+            trace_sampled=False,
+        )
+        raise
 
-    template = Template(prompt_text)
-    rendered_body = template.substitute(**render_variables)
-    return f"{_contract_header(contract)}\n\n{rendered_body}"
+
+def get_prompt_diagnostics_report(*, limit: int = 25) -> dict[str, Any]:
+    return _PROMPT_DIAGNOSTICS_REPO.diagnostics_report(limit=limit)
+
+
+def attach_prompt_outcome(*, run_id: str, outcome_label: str) -> None:
+    _PROMPT_DIAGNOSTICS_REPO.attach_outcome_label(run_id=run_id, outcome_label=outcome_label)
