@@ -25,6 +25,7 @@ from data.models import RUN_STATUS_COMPLETED, RUN_STATUS_RUNNING, RUN_STATUS_SKI
 from data.repositories import ActionRepository, OutcomeRepository, WorkflowRepository
 from memory.long_term_store import LongTermMemory
 from memory.memory_models import OutcomeRecord
+from memory.retrieval import retrieve_persona_evidence
 from memory.short_term_store import ShortTermMemory
 from orchestrator.audit_logger import log_step
 from orchestrator.retry_policy import with_retries
@@ -92,7 +93,14 @@ class WorkflowOrchestrator:
             return True
 
         if step == "strategist_agent":
-            decision = with_retries(lambda: strategist_agent(envelope.signal_context, envelope.deal_context))
+            persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
+            memory_evidence = retrieve_persona_evidence(
+                memory=self.long_memory,
+                outcome_repo=self.outcome_repo,
+                persona=persona,
+            )
+            envelope.raw_data["memory_inputs_strategist"] = memory_evidence
+            decision = with_retries(lambda: strategist_agent(envelope.signal_context, envelope.deal_context, memory_evidence))
             append_or_refine_section(envelope, agent_name="strategist_agent", section_value=decision)
             set_stage(envelope, "strategy_done")
             self.workflow_repo.update_run(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
@@ -101,6 +109,13 @@ class WorkflowOrchestrator:
             return True
 
         if step == "action_agent":
+            persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
+            memory_evidence = retrieve_persona_evidence(
+                memory=self.long_memory,
+                outcome_repo=self.outcome_repo,
+                persona=persona,
+            )
+            envelope.raw_data["memory_inputs_action"] = memory_evidence
             action_plan = with_retries(lambda: action_agent(envelope.decision_context, envelope.deal_context))
             if not action_plan.steps:
                 raise ValueError("action_agent returned an empty action plan")

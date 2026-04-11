@@ -70,3 +70,17 @@ class OutcomeRepository:
                 """,
                 (persona, insight, success_rate_hint, _now()),
             )
+
+    def get_persona_insights(self, persona: str, *, limit: int = 5) -> list[dict]:
+        with self.db.tx() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, persona, insight, success_rate_hint, created_at
+                FROM persona_insights
+                WHERE persona = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (persona, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]

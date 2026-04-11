@@ -40,7 +40,14 @@ def append_or_refine_section(envelope: ContextEnvelope, *, agent_name: str, sect
         section_value.meta.created_at = current.meta.created_at
     section_value.meta.source_agent = agent_name
     setattr(envelope, section_name, section_value)
-    envelope.history.append({"agent": agent_name, "section": section_name, "value": asdict(section_value)})
+    history_record = {"agent": agent_name, "section": section_name, "value": asdict(section_value)}
+    if agent_name == "strategist_agent":
+        history_record["memory_rationale"] = {
+            "evidence_ids": [item.get("id") for item in getattr(section_value, "memory_evidence_used", [])],
+            "confidence_impact": getattr(section_value, "memory_confidence_impact", 0.0),
+            "summary": getattr(section_value, "memory_rationale", ""),
+        }
+    envelope.history.append(history_record)
     return envelope
 
 
