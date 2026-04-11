@@ -20,7 +20,7 @@ def evaluator_agent(execution_context: ExecutionContext, outcome: ExecutionOutco
             "workflow_goal": "Evaluate execution outcomes and produce reusable learning signals.",
             "stage_name": "evaluator_agent",
             "policy_mode": "observe_only",
-            "expected_output_schema": "OutcomeContext(outcome_label, insight, recommended_adjustment, reasoning, confidence)",
+            "output_model": OutcomeContext,
         },
     )
     if execution_context.status != "executed":

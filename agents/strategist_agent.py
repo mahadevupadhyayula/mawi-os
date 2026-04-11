@@ -24,7 +24,7 @@ def strategist_agent(
             "workflow_goal": "Select a next-best strategy that restarts stalled conversations.",
             "stage_name": "strategist_agent",
             "policy_mode": "policy_guided",
-            "expected_output_schema": "DecisionContext(strategy_id, strategy_type, message_goal, fallback_strategy, memory_evidence_used, memory_confidence_impact, memory_rationale, reasoning, confidence)",
+            "output_model": DecisionContext,
         },
     )
     baseline_strategy = "roi_framing" if "budget timing" in deal_context.known_objections else "risk_reduction"

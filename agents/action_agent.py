@@ -51,7 +51,7 @@ def action_agent(decision_context: DecisionContext, deal_context: DealContext) -
             "workflow_goal": "Generate an ordered, approval-ready action plan from strategy and deal context.",
             "stage_name": "action_agent",
             "policy_mode": "policy_guided",
-            "expected_output_schema": "ActionPlanContext(plan_id, steps[], status, reasoning, confidence)",
+            "output_model": ActionPlanContext,
         },
     )
     subject, preview = _subject_and_preview(decision_context)

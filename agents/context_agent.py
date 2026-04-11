@@ -20,7 +20,7 @@ def context_agent(raw_data: dict, signal_context: SignalContext) -> DealContext:
             "workflow_goal": "Build normalized deal context for downstream strategy and action agents.",
             "stage_name": "context_agent",
             "policy_mode": "observe_only",
-            "expected_output_schema": "DealContext(persona, deal_stage, known_objections, recent_timeline, recommended_tone, reasoning, confidence)",
+            "output_model": DealContext,
         },
     )
     reasoning = "Built persona and objection context from deal snapshot and signal."

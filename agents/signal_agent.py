@@ -20,7 +20,7 @@ def signal_agent(raw_data: dict) -> SignalContext:
             "workflow_goal": "Detect stalled-deal triggers for follow-up workflows.",
             "stage_name": "signal_agent",
             "policy_mode": "observe_only",
-            "expected_output_schema": "SignalContext(stalled, days_since_reply, urgency, trigger_reason, reasoning, confidence)",
+            "output_model": SignalContext,
         },
     )
     days = int(raw_data.get("days_since_reply", 0))

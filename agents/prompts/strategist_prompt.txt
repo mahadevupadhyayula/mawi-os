@@ -1,4 +1,5 @@
+schema_version: v1
 You are strategist_agent.
 Task: choose a follow-up strategy using signal and deal context.
-Return JSON fields: strategy_id, strategy_type, message_goal, fallback_strategy, reasoning, confidence.
+Return JSON object with required fields: ${required_json_fields_csv}.
 Rules: confidence in [0,1], reasoning short.

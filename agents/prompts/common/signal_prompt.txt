@@ -1,4 +1,5 @@
+schema_version: v1
 You are signal_agent.
 Task: detect stalled-deal signal from raw deal data.
-Return JSON fields: stalled, days_since_reply, urgency, trigger_reason, reasoning, confidence.
+Return JSON object with required fields: ${required_json_fields_csv}.
 Rules: confidence in [0,1], reasoning short.

@@ -1,6 +1,7 @@
 import unittest
 
-from agents.prompt_templates import get_prompt_fallback_telemetry, render_prompt
+from agents.prompt_templates import PROMPT_OUTPUT_MODELS, get_prompt_fallback_telemetry, render_prompt
+from context.models import DealContext
 
 
 class TestPromptContracts(unittest.TestCase):
@@ -11,12 +12,13 @@ class TestPromptContracts(unittest.TestCase):
                 "workflow_goal": "Detect stalled deal activity.",
                 "stage_name": "signal_agent",
                 "policy_mode": "observe_only",
-                "expected_output_schema": "SignalContext(...)",
             },
         )
 
         self.assertIn("workflow_id: deal_followup_workflow", rendered)
         self.assertIn("stage_name: signal_agent", rendered)
+        self.assertIn("prompt_schema_version: v1", rendered)
+        self.assertIn("required_json_fields:", rendered)
 
     def test_render_prompt_raises_when_required_keys_missing(self) -> None:
         with self.assertRaises(ValueError) as ctx:
@@ -28,7 +30,7 @@ class TestPromptContracts(unittest.TestCase):
                 },
             )
 
-        self.assertIn("expected_output_schema", str(ctx.exception))
+        self.assertIn("workflow_goal", str(ctx.exception))
         self.assertIn("workflow_goal", str(ctx.exception))
 
     def test_render_prompt_raises_for_unknown_workflow_id(self) -> None:
@@ -40,7 +42,6 @@ class TestPromptContracts(unittest.TestCase):
                     "workflow_goal": "Detect stalled deal activity.",
                     "stage_name": "signal_agent",
                     "policy_mode": "observe_only",
-                    "expected_output_schema": "SignalContext(...)",
                 },
             )
 
@@ -55,13 +56,55 @@ class TestPromptContracts(unittest.TestCase):
                 "workflow_goal": "Gather follow-up context.",
                 "stage_name": "context_agent",
                 "policy_mode": "observe_only",
-                "expected_output_schema": "DealContext(...)",
             },
         )
 
         telemetry = get_prompt_fallback_telemetry()
         expected_key = "new_deal_outreach_workflow:context_prompt.txt:missing_workflow_prompt"
         self.assertGreaterEqual(telemetry.get(expected_key, 0), 1)
+
+    def test_render_prompt_uses_active_dataclass_fields(self) -> None:
+        rendered = render_prompt(
+            "context_prompt.txt",
+            prompt_contract={
+                "workflow_goal": "Gather follow-up context.",
+                "stage_name": "context_agent",
+                "policy_mode": "observe_only",
+                "output_model": DealContext,
+            },
+        )
+        self.assertIn("output_model: DealContext", rendered)
+        self.assertIn(
+            "required_json_fields: [\"reasoning\", \"confidence\", \"persona\", \"deal_stage\", "
+            "\"known_objections\", \"recent_timeline\", \"recommended_tone\"]",
+            rendered,
+        )
+        self.assertIn(
+            "Return JSON object with required fields: reasoning, confidence, persona, deal_stage, "
+            "known_objections, recent_timeline, recommended_tone.",
+            rendered,
+        )
+
+    def test_all_prompt_templates_match_model_declared_fields(self) -> None:
+        for prompt_name, output_model in PROMPT_OUTPUT_MODELS.items():
+            rendered = render_prompt(
+                prompt_name,
+                prompt_contract={
+                    "workflow_goal": "Contract validation",
+                    "stage_name": "contract_test",
+                    "policy_mode": "observe_only",
+                    "output_model": output_model,
+                },
+            )
+            required_fields = [
+                field.strip()
+                for field in rendered.split("Return JSON object with required fields:", maxsplit=1)[1]
+                .split(".", maxsplit=1)[0]
+                .split(",")
+            ]
+            header_fields = rendered.split("required_json_fields: ", maxsplit=1)[1].split("\n", maxsplit=1)[0]
+            for field in required_fields:
+                self.assertIn(f'"{field}"', header_fields)
 
 
 if __name__ == "__main__":
