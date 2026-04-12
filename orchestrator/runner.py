@@ -26,7 +26,7 @@ from agents.contracts import ExecutionOutcome
 from approval.policy import requires_approval
 from approval.queue import ApprovalQueue
 from context.envelope import append_or_refine_section, set_stage
-from context.models import ActionContext, ActionPlanContext, ActionStep, ContextEnvelope, MetaContext
+from context.models import ActionContext, ActionPlanContext, ActionStep, ContextEnvelope, MetaContext, OutcomeContext
 from data.models import RUN_STATUS_COMPLETED, RUN_STATUS_FAILED, RUN_STATUS_RUNNING, RUN_STATUS_SKIPPED, RUN_STATUS_WAITING_APPROVAL
 from data.repositories import ActionRepository, OutcomeRepository, WorkflowRepository
 from evaluation.metrics import WorkflowPathMetrics
@@ -67,6 +67,16 @@ class WorkflowOrchestrator:
         self.outcome_repo = OutcomeRepository()
         self.path_metrics = WorkflowPathMetrics()
         self._run_ids: dict[str, str] = {}
+
+    def _validate_workflow_definition(self, workflow_id: str, steps: list[str]) -> None:
+        if "evaluator_agent" not in steps:
+            raise ValueError(f"Workflow '{workflow_id}' must include 'evaluator_agent' stage.")
+        if "execution_agent" not in steps:
+            raise ValueError(f"Workflow '{workflow_id}' must include 'execution_agent' stage before evaluation.")
+        if steps.index("execution_agent") > steps.index("evaluator_agent"):
+            raise ValueError(
+                f"Workflow '{workflow_id}' has invalid stage ordering: 'execution_agent' must run before 'evaluator_agent'."
+            )
 
     def _update_run_status(
         self,
@@ -168,6 +178,7 @@ class WorkflowOrchestrator:
         envelope = ContextEnvelope(meta=MetaContext(deal_id=deal_id), raw_data=raw)
         self.workflow_repo.create_or_update_deal(deal_id, raw)
         workflow = get_workflow(workflow_name)
+        self._validate_workflow_definition(workflow.workflow_id, workflow.steps)
         run_id = self.workflow_repo.create_run(deal_id, workflow.workflow_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
         self._run_ids[deal_id] = run_id
         self._snapshot(deal_id, envelope, source_agent="system")
@@ -481,28 +492,52 @@ class WorkflowOrchestrator:
             raise
         append_or_refine_section(envelope, agent_name="evaluator_agent", section_value=outcome_ctx)
         set_stage(envelope, "evaluation_done")
+        self._handle_evaluator_result(
+            envelope=envelope,
+            action_id=action_ctx.action_id,
+            outcome=outcome,
+            execution_success=execution.status == "executed",
+            outcome_context=outcome_ctx,
+            outcome_label=outcome_ctx.outcome_label,
+            outcome_confidence=outcome_ctx.confidence,
+            outcome_insight=outcome_ctx.insight,
+            run_id=run_id,
+        )
+        return envelope
+
+    def _handle_evaluator_result(
+        self,
+        *,
+        envelope: ContextEnvelope,
+        action_id: str,
+        outcome: ExecutionOutcome,
+        execution_success: bool,
+        outcome_context: OutcomeContext,
+        outcome_label: str,
+        outcome_confidence: float,
+        outcome_insight: str,
+        run_id: str | None,
+    ) -> None:
+        memory_insight = f"{outcome_insight} | {_memory_influence_summary(envelope)}"
         if run_id:
-            self.outcome_repo.record_outcome(run_id, envelope.meta.deal_id, action_ctx.action_id, outcome_ctx)
-            attach_prompt_outcome(run_id=run_id, outcome_label=outcome_ctx.outcome_label)
+            self.outcome_repo.record_outcome(run_id, envelope.meta.deal_id, action_id, outcome_context)
+            attach_prompt_outcome(run_id=run_id, outcome_label=outcome_label)
             attach_prompt_outcome_metrics(
                 run_id=run_id,
                 reply_received=outcome.reply_received,
                 meeting_booked=outcome.meeting_booked,
-                execution_success=execution.status == "executed",
+                execution_success=execution_success,
             )
             persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
-            memory_insight = f"{outcome_ctx.insight} | {_memory_influence_summary(envelope)}"
-            self.outcome_repo.add_persona_insight(persona, memory_insight, outcome_ctx.confidence)
+            self.outcome_repo.add_persona_insight(persona, memory_insight, outcome_confidence)
             self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_COMPLETED, complete=True)
             self._snapshot(envelope.meta.deal_id, envelope, source_agent="evaluator_agent")
-
         self.long_memory.add_outcome(
             OutcomeRecord(
                 deal_id=envelope.meta.deal_id,
-                action_id=action_ctx.action_id,
-                outcome_label=outcome_ctx.outcome_label,
-                insight=f"{outcome_ctx.insight} | {_memory_influence_summary(envelope)}",
+                action_id=action_id,
+                outcome_label=outcome_label,
+                insight=memory_insight,
             )
         )
         self.short_memory.save(envelope.meta.deal_id, envelope)
-        return envelope
