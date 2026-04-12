@@ -11,6 +11,14 @@ class StartWorkflowRequest(BaseModel):
     deal_id: str = Field(..., description="Deal identifier used to run workflow orchestration.")
 
 
+class InterventionRunRequest(BaseModel):
+    deal_id: str = Field(..., description="Deal identifier used to run intervention workflow orchestration.")
+
+
+class CRMSyncRunRequest(BaseModel):
+    deal_id: str = Field(..., description="Deal identifier used to run CRM sync workflow orchestration.")
+
+
 class WorkflowSelectionMixin(BaseModel):
     workflow: str = Field(
         default="deal-followup",
@@ -20,6 +28,24 @@ class WorkflowSelectionMixin(BaseModel):
 
 class StartWorkflowResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
+
+
+class WorkflowRunEnvelopeResponse(BaseModel):
+    status: str
+    workflow_id: str
+    deal_id: str
+    run_id: str | None = None
+    workflow_stage: str
+
+
+class CRMSyncStatusResponse(BaseModel):
+    status: str
+    deal_id: str | None = None
+    run_id: str | None = None
+    sync_status: str
+    synced_at: str | None = None
+    error_message: str | None = None
+    updated_at: str | None = None
 
 
 class ActionListResponse(BaseModel):

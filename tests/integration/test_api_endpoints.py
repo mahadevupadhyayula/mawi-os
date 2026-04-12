@@ -198,3 +198,49 @@ def test_start_crm_sync_workflow_via_alias_runs_to_evaluation(api_client_and_ser
     data = response.json()
     assert data["meta"]["workflow_stage"] == "evaluation_done"
     assert data["action_plan"]["steps"][0]["channel"] == "crm"
+
+
+def test_intervention_and_crm_sync_routes_and_sync_status(api_client_and_service, monkeypatch) -> None:
+    client, service = api_client_and_service
+    payload = _seed_payload("deal-api-sync-001")
+    payload.update(
+        {
+            "deal_stalled": True,
+            "trigger_event": "post_action_execution",
+            "execution_id": "exec-api-sync-1",
+            "crm_sync_required": True,
+            "crm_pending_updates": ["execution_result"],
+        }
+    )
+    monkeypatch.setattr("orchestrator.runner.fetch_deal_data", lambda _deal_id: dict(payload))
+
+    intervention_response = client.post("/api/workflows/intervention/run", json={"deal_id": "deal-api-sync-001"})
+    assert intervention_response.status_code == 200
+    intervention_payload = intervention_response.json()
+    assert intervention_payload["status"] == "started"
+    assert intervention_payload["workflow_id"] == "deal_intervention_workflow"
+
+    crm_sync_response = client.post("/api/workflows/crm-sync/run", json={"deal_id": "deal-api-sync-001"})
+    assert crm_sync_response.status_code == 200
+    crm_sync_payload = crm_sync_response.json()
+    assert crm_sync_payload["status"] == "started"
+    assert crm_sync_payload["workflow_id"] == "crm_sync_workflow"
+
+    run_id = service.orchestrator.workflow_repo.get_latest_run_id("deal-api-sync-001")
+    assert run_id is not None
+
+    status_by_deal = client.get("/api/crm/sync-status", params={"deal_id": "deal-api-sync-001"})
+    assert status_by_deal.status_code == 200
+    status_payload = status_by_deal.json()
+    assert status_payload["status"] == "ok"
+    assert status_payload["sync_status"] == "completed"
+
+    status_by_run = client.get("/api/crm/sync-status", params={"run_id": run_id})
+    assert status_by_run.status_code == 200
+    by_run_payload = status_by_run.json()
+    assert by_run_payload["run_id"] == run_id
+    assert by_run_payload["sync_status"] == "completed"
+
+    missing_params = client.get("/api/crm/sync-status")
+    assert missing_params.status_code == 400
+    assert missing_params.json()["error"] == "invalid_request"

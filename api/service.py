@@ -27,6 +27,7 @@ from context.models import (
     SectionMeta,
     SignalContext,
 )
+from data.repositories import CRMSyncLogRepository, InterventionLogRepository
 from orchestrator.runner import WorkflowOrchestrator
 from workflows.registry import get_registered_workflow_names, is_known_workflow
 
@@ -43,6 +44,8 @@ class WorkflowAPI:
     def __init__(self, orchestrator: WorkflowOrchestrator | None = None) -> None:
         self.orchestrator = orchestrator or WorkflowOrchestrator()
         self._deal_envelopes: Dict[str, Any] = {}
+        self.intervention_log_repo = InterventionLogRepository(db=self.orchestrator.workflow_repo.db)
+        self.crm_sync_log_repo = CRMSyncLogRepository(db=self.orchestrator.workflow_repo.db)
 
     def start_workflow(
         self,
@@ -184,6 +187,92 @@ class WorkflowAPI:
 
     def get_prompt_diagnostics(self, *, limit: int = 25) -> dict:
         return get_prompt_diagnostics_report(limit=limit)
+
+    def run_intervention_workflow(self, deal_id: str) -> dict[str, str | None]:
+        workflow_id = "deal_intervention_workflow"
+        envelope = self.orchestrator.run_workflow(deal_id, workflow_name=workflow_id)
+        self._deal_envelopes[deal_id] = envelope
+        run_id = self.orchestrator.workflow_repo.get_latest_run_id(deal_id)
+        self.intervention_log_repo.insert_log(
+            run_id=run_id or "unknown",
+            deal_id=deal_id,
+            intervention_type="automated",
+            status="completed",
+            details={"workflow_stage": envelope.meta.workflow_stage, "workflow_id": workflow_id},
+        )
+        return self._workflow_run_envelope(
+            workflow_id=workflow_id,
+            deal_id=deal_id,
+            run_id=run_id,
+            workflow_stage=envelope.meta.workflow_stage,
+        )
+
+    def run_crm_sync_workflow(self, deal_id: str) -> dict[str, str | None]:
+        workflow_id = "crm_sync_workflow"
+        envelope = self.orchestrator.run_workflow(
+            deal_id,
+            workflow_name=workflow_id,
+            trigger_context={"trigger_source": "api", "trigger_event": "explicit"},
+        )
+        self._deal_envelopes[deal_id] = envelope
+        run_id = self.orchestrator.workflow_repo.get_latest_run_id(deal_id)
+        self.crm_sync_log_repo.insert_log(
+            run_id=run_id or "unknown",
+            deal_id=deal_id,
+            sync_status="completed",
+            request={"source": "api", "workflow_id": workflow_id},
+            response={"workflow_stage": envelope.meta.workflow_stage},
+            synced_at=envelope.meta.updated_at,
+        )
+        return self._workflow_run_envelope(
+            workflow_id=workflow_id,
+            deal_id=deal_id,
+            run_id=run_id,
+            workflow_stage=envelope.meta.workflow_stage,
+        )
+
+    def get_crm_sync_status(self, *, deal_id: str | None = None, run_id: str | None = None) -> dict[str, str | None]:
+        if run_id is None and deal_id is None:
+            raise ValueError("Either run_id or deal_id must be provided")
+
+        rows = self.crm_sync_log_repo.list_logs(run_id=run_id, deal_id=deal_id, limit=1)
+        if rows:
+            latest = rows[0]
+            return {
+                "status": "ok",
+                "deal_id": str(latest.get("deal_id")) if latest.get("deal_id") is not None else None,
+                "run_id": str(latest.get("run_id")) if latest.get("run_id") is not None else None,
+                "sync_status": str(latest.get("sync_status") or "unknown"),
+                "synced_at": str(latest.get("synced_at")) if latest.get("synced_at") else None,
+                "error_message": str(latest.get("error_message")) if latest.get("error_message") else None,
+                "updated_at": str(latest.get("updated_at")) if latest.get("updated_at") else None,
+            }
+
+        return {
+            "status": "ok",
+            "deal_id": deal_id,
+            "run_id": run_id,
+            "sync_status": "not_started",
+            "synced_at": None,
+            "error_message": None,
+            "updated_at": None,
+        }
+
+    def _workflow_run_envelope(
+        self,
+        *,
+        workflow_id: str,
+        deal_id: str,
+        run_id: str | None,
+        workflow_stage: str,
+    ) -> dict[str, str | None]:
+        return {
+            "status": "started",
+            "workflow_id": workflow_id,
+            "deal_id": deal_id,
+            "run_id": run_id,
+            "workflow_stage": workflow_stage,
+        }
 
     def _get_action(self, action_id: str) -> dict:
         action = self.orchestrator.queue.get(action_id)

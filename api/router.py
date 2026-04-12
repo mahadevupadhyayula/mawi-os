@@ -11,14 +11,18 @@ from api.schemas import (
     ActionListResponse,
     ActionMutationResponse,
     ApproveActionRequest,
+    CRMSyncRunRequest,
+    CRMSyncStatusResponse,
     DealStateResponse,
     EditActionRequest,
     ErrorResponse,
+    InterventionRunRequest,
     PromptDiagnosticsResponse,
     RejectActionRequest,
     RunSummaryResponse,
     StartWorkflowRequest,
     StartWorkflowResponse,
+    WorkflowRunEnvelopeResponse,
 )
 from api.service import WorkflowAPI
 from workflows.registry import is_known_workflow
@@ -200,3 +204,44 @@ def get_prompt_diagnostics(
     service: WorkflowAPI = Depends(get_service),
 ) -> dict[str, Any]:
     return service.get_prompt_diagnostics(limit=limit)
+
+
+@router.post(
+    "/workflows/intervention/run",
+    response_model=WorkflowRunEnvelopeResponse,
+    summary="Run intervention workflow for a deal",
+)
+def run_intervention_workflow(
+    payload: InterventionRunRequest,
+    service: WorkflowAPI = Depends(get_service),
+) -> dict[str, str | None]:
+    return service.run_intervention_workflow(payload.deal_id)
+
+
+@router.post(
+    "/workflows/crm-sync/run",
+    response_model=WorkflowRunEnvelopeResponse,
+    summary="Run CRM sync workflow for a deal",
+)
+def run_crm_sync_workflow(
+    payload: CRMSyncRunRequest,
+    service: WorkflowAPI = Depends(get_service),
+) -> dict[str, str | None]:
+    return service.run_crm_sync_workflow(payload.deal_id)
+
+
+@router.get(
+    "/crm/sync-status",
+    response_model=CRMSyncStatusResponse,
+    responses=_ERROR_RESPONSES,
+    summary="Fetch latest CRM sync status by run_id or deal_id",
+)
+def get_crm_sync_status(
+    deal_id: str | None = Query(default=None),
+    run_id: str | None = Query(default=None),
+    service: WorkflowAPI = Depends(get_service),
+) -> dict[str, str | None] | JSONResponse:
+    try:
+        return service.get_crm_sync_status(deal_id=deal_id, run_id=run_id)
+    except ValueError as exc:
+        return _error_response(status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc))
