@@ -16,6 +16,12 @@
     "recent_timeline": ["Intro call complete", "Security review requested"],
     "recommended_tone": "consultative"
   },
+  "intervention_prompt.txt": {
+    "reasoning": "Multiple high-frequency sends and negative sentiment indicate escalating risk.",
+    "confidence": 0.86,
+    "result": "intervene",
+    "reason": "Pause automation and require human review before additional outreach."
+  },
   "strategist_prompt.txt": {
     "reasoning": "Recommend value reminder with low-friction CTA.",
     "confidence": 0.77,
