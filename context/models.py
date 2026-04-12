@@ -66,6 +66,14 @@ class DecisionContext(SectionBase):
     memory_rationale: str = ""
 
 
+
+
+@dataclass
+class InterventionDecisionContext(SectionBase):
+    result: Literal["hold", "monitor", "intervene"] = "hold"
+    reason: str = ""
+
+
 @dataclass
 class ActionContext(SectionBase):
     action_id: str = ""
@@ -127,6 +135,7 @@ class ContextEnvelope:
     signal_context: Optional[SignalContext] = None
     deal_context: Optional[DealContext] = None
     decision_context: Optional[DecisionContext] = None
+    intervention_decision_context: Optional[InterventionDecisionContext] = None
     action_context: Optional[ActionContext] = None
     action_plan: Optional[ActionPlanContext] = None
     execution_context: Optional[ExecutionContext] = None

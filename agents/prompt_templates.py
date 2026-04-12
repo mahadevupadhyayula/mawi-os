@@ -25,6 +25,7 @@ from context.models import (
     DealContext,
     DecisionContext,
     ExecutionContext,
+    InterventionDecisionContext,
     OutcomeContext,
     SignalContext,
 )
@@ -56,6 +57,7 @@ PROMPT_OUTPUT_MODELS: dict[str, type] = {
     "signal_prompt.txt": SignalContext,
     "context_prompt.txt": DealContext,
     "strategist_prompt.txt": DecisionContext,
+    "intervention_prompt.txt": InterventionDecisionContext,
     "action_prompt.txt": ActionPlanContext,
     "execution_prompt.txt": ExecutionContext,
     "evaluator_prompt.txt": OutcomeContext,
