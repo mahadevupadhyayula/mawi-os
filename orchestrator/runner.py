@@ -18,6 +18,7 @@ from agents.crm_agent import crm_agent
 from agents.context_agent import context_agent
 from agents.evaluator_agent import evaluator_agent
 from agents.execution_agent import execution_agent
+from agents.intervention_agent import intervention_agent
 from agents.signal_agent import signal_agent
 from agents.strategist_agent import strategist_agent
 from agents.prompt_templates import attach_prompt_outcome, attach_prompt_outcome_metrics
@@ -193,161 +194,195 @@ class WorkflowOrchestrator:
         return envelope
 
     def _execute_workflow_step(self, workflow_id: str, step: str, deal_id: str, run_id: str, envelope: ContextEnvelope) -> bool:
-        if step == "signal_agent":
-            signal = self._execute_with_step_audit(
-                workflow_id=workflow_id,
-                step=step,
-                fn=lambda: signal_agent(envelope.raw_data, workflow_id=workflow_id, run_id=run_id),
-            )
-            append_or_refine_section(envelope, agent_name="signal_agent", section_value=signal)
-            set_stage(envelope, "signal_done")
-            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
-            self._snapshot(deal_id, envelope, source_agent="signal_agent")
-            return True
+        stage_handlers: dict[str, Callable[[], bool]] = {
+            "signal_agent": lambda: self._handle_signal_agent_step(workflow_id, step, deal_id, run_id, envelope),
+            "context_agent": lambda: self._handle_context_agent_step(workflow_id, step, deal_id, run_id, envelope),
+            "strategist_agent": lambda: self._handle_strategist_agent_step(workflow_id, step, deal_id, run_id, envelope),
+            "intervention_agent": lambda: self._handle_intervention_agent_step(workflow_id, step, deal_id, run_id, envelope),
+            "action_agent": lambda: self._handle_action_agent_step(workflow_id, step, deal_id, run_id, envelope),
+            "crm_agent": lambda: self._handle_crm_agent_step(workflow_id, step, deal_id, run_id, envelope),
+            "execution_agent": lambda: True,
+            "evaluator_agent": lambda: True,
+        }
+        handler = stage_handlers.get(step)
+        if handler is None:
+            raise ValueError(f"Unsupported workflow step: {step}")
+        return handler()
 
-        if step == "context_agent":
-            deal = self._execute_with_step_audit(
-                workflow_id=workflow_id,
-                step=step,
-                fn=lambda: context_agent(
-                    envelope.raw_data,
-                    envelope.signal_context,
-                    workflow_id=workflow_id,
-                    run_id=run_id,
-                ),
-            )
-            append_or_refine_section(envelope, agent_name="context_agent", section_value=deal)
-            set_stage(envelope, "context_done")
-            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
-            self._snapshot(deal_id, envelope, source_agent="context_agent")
-            return True
+    def _handle_signal_agent_step(self, workflow_id: str, step: str, deal_id: str, run_id: str, envelope: ContextEnvelope) -> bool:
+        signal = self._execute_with_step_audit(
+            workflow_id=workflow_id,
+            step=step,
+            fn=lambda: signal_agent(envelope.raw_data, workflow_id=workflow_id, run_id=run_id),
+        )
+        append_or_refine_section(envelope, agent_name="signal_agent", section_value=signal)
+        set_stage(envelope, "signal_done")
+        self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+        self._snapshot(deal_id, envelope, source_agent="signal_agent")
+        return True
 
-        if step == "strategist_agent":
-            persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
-            memory_evidence = retrieve_persona_evidence(
-                memory=self.long_memory,
-                outcome_repo=self.outcome_repo,
-                persona=persona,
-            )
-            envelope.raw_data["memory_inputs_strategist"] = memory_evidence
-            decision = self._execute_with_step_audit(
+    def _handle_context_agent_step(self, workflow_id: str, step: str, deal_id: str, run_id: str, envelope: ContextEnvelope) -> bool:
+        deal = self._execute_with_step_audit(
+            workflow_id=workflow_id,
+            step=step,
+            fn=lambda: context_agent(
+                envelope.raw_data,
+                envelope.signal_context,
                 workflow_id=workflow_id,
-                step=step,
-                fn=lambda: strategist_agent(
-                    envelope.signal_context,
-                    envelope.deal_context,
-                    memory_evidence,
-                    workflow_id=workflow_id,
-                    run_id=run_id,
-                ),
-            )
-            append_or_refine_section(envelope, agent_name="strategist_agent", section_value=decision)
-            set_stage(envelope, "strategy_done")
-            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
-            self._snapshot(deal_id, envelope, source_agent="strategist_agent")
-            return True
+                run_id=run_id,
+            ),
+        )
+        append_or_refine_section(envelope, agent_name="context_agent", section_value=deal)
+        set_stage(envelope, "context_done")
+        self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+        self._snapshot(deal_id, envelope, source_agent="context_agent")
+        return True
 
-        if step == "action_agent":
-            persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
-            memory_evidence = retrieve_persona_evidence(
-                memory=self.long_memory,
-                outcome_repo=self.outcome_repo,
-                persona=persona,
-            )
-            envelope.raw_data["memory_inputs_action"] = memory_evidence
-            action_plan = self._execute_with_step_audit(
+    def _handle_strategist_agent_step(self, workflow_id: str, step: str, deal_id: str, run_id: str, envelope: ContextEnvelope) -> bool:
+        persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
+        memory_evidence = retrieve_persona_evidence(
+            memory=self.long_memory,
+            outcome_repo=self.outcome_repo,
+            persona=persona,
+        )
+        envelope.raw_data["memory_inputs_strategist"] = memory_evidence
+        decision = self._execute_with_step_audit(
+            workflow_id=workflow_id,
+            step=step,
+            fn=lambda: strategist_agent(
+                envelope.signal_context,
+                envelope.deal_context,
+                memory_evidence,
                 workflow_id=workflow_id,
-                step=step,
-                fn=lambda: action_agent(
-                    envelope.decision_context,
-                    envelope.deal_context,
-                    workflow_id=workflow_id,
-                    run_id=run_id,
-                ),
-            )
-            if not action_plan.steps:
-                raise ValueError("action_agent returned an empty action plan")
-            first_step = sorted(action_plan.steps, key=lambda item: item.order)[0]
-            action = ActionContext(
-                action_id=first_step.step_id,
-                type=first_step.action_type,
-                subject=first_step.subject,
-                preview=first_step.preview,
-                body_draft=first_step.body_draft,
-                status=first_step.status,
-                reasoning=action_plan.reasoning,
-                confidence=action_plan.confidence,
-            )
-            action_requires_approval = requires_approval(action_plan.confidence, self.approval_threshold)
-            if action_requires_approval:
-                action_plan.status = "pending_approval"
-                for plan_step in action_plan.steps:
-                    plan_step.status = "pending_approval"
-                action.status = "pending_approval"
-                self.queue.enqueue(asdict(action))
-                set_stage(envelope, "waiting_approval")
-                self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_WAITING_APPROVAL)
-            else:
-                action_plan.status = "approved"
-                for plan_step in action_plan.steps:
-                    plan_step.status = "approved"
-                action.status = "approved"
-                set_stage(envelope, "action_done")
-                self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+                run_id=run_id,
+            ),
+        )
+        append_or_refine_section(envelope, agent_name="strategist_agent", section_value=decision)
+        set_stage(envelope, "strategy_done")
+        self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+        self._snapshot(deal_id, envelope, source_agent="strategist_agent")
+        return True
 
-            append_or_refine_section(envelope, agent_name="action_agent", section_value=action)
-            envelope.action_plan = action_plan
-            self.action_repo.upsert_action(run_id, deal_id, action)
-            self.action_repo.upsert_action_plan(run_id, deal_id, action.action_id, action_plan)
-            self._snapshot(deal_id, envelope, source_agent="action_agent")
-            self.long_memory.add_outcome(
-                OutcomeRecord(deal_id=deal_id, action_id=action.action_id, outcome_label="pending", insight="Action created")
-            )
-            return False
-
-        if step == "crm_agent":
-            crm_action_plan = self._execute_with_step_audit(
+    def _handle_intervention_agent_step(
+        self,
+        workflow_id: str,
+        step: str,
+        deal_id: str,
+        run_id: str,
+        envelope: ContextEnvelope,
+    ) -> bool:
+        intervention = self._execute_with_step_audit(
+            workflow_id=workflow_id,
+            step=step,
+            fn=lambda: intervention_agent(
+                envelope.signal_context,
+                envelope.deal_context,
                 workflow_id=workflow_id,
-                step=step,
-                fn=lambda: crm_agent(
-                    envelope.raw_data,
-                    envelope.deal_context,
-                    envelope.decision_context,
-                    workflow_id=workflow_id,
-                    run_id=run_id,
-                ),
-            )
-            if not crm_action_plan.steps:
-                raise ValueError("crm_agent returned an empty action plan")
-            first_step = sorted(crm_action_plan.steps, key=lambda item: item.order)[0]
-            action = ActionContext(
-                action_id=first_step.step_id,
-                type=first_step.action_type,
-                subject=first_step.subject,
-                preview=first_step.preview,
-                body_draft=first_step.body_draft,
-                status="approved",
-                reasoning=crm_action_plan.reasoning,
-                confidence=crm_action_plan.confidence,
-            )
-            crm_action_plan.status = "approved"
-            for plan_step in crm_action_plan.steps:
+                run_id=run_id,
+            ),
+        )
+        append_or_refine_section(envelope, agent_name="intervention_agent", section_value=intervention)
+        set_stage(envelope, "intervention_done")
+        self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+        self._snapshot(deal_id, envelope, source_agent="intervention_agent")
+        return True
+
+    def _handle_action_agent_step(self, workflow_id: str, step: str, deal_id: str, run_id: str, envelope: ContextEnvelope) -> bool:
+        persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
+        memory_evidence = retrieve_persona_evidence(
+            memory=self.long_memory,
+            outcome_repo=self.outcome_repo,
+            persona=persona,
+        )
+        envelope.raw_data["memory_inputs_action"] = memory_evidence
+        action_plan = self._execute_with_step_audit(
+            workflow_id=workflow_id,
+            step=step,
+            fn=lambda: action_agent(
+                envelope.decision_context,
+                envelope.deal_context,
+                workflow_id=workflow_id,
+                run_id=run_id,
+            ),
+        )
+        if not action_plan.steps:
+            raise ValueError("action_agent returned an empty action plan")
+        first_step = sorted(action_plan.steps, key=lambda item: item.order)[0]
+        action = ActionContext(
+            action_id=first_step.step_id,
+            type=first_step.action_type,
+            subject=first_step.subject,
+            preview=first_step.preview,
+            body_draft=first_step.body_draft,
+            status=first_step.status,
+            reasoning=action_plan.reasoning,
+            confidence=action_plan.confidence,
+        )
+        action_requires_approval = requires_approval(action_plan.confidence, self.approval_threshold)
+        if action_requires_approval:
+            action_plan.status = "pending_approval"
+            for plan_step in action_plan.steps:
+                plan_step.status = "pending_approval"
+            action.status = "pending_approval"
+            self.queue.enqueue(asdict(action))
+            set_stage(envelope, "waiting_approval")
+            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_WAITING_APPROVAL)
+        else:
+            action_plan.status = "approved"
+            for plan_step in action_plan.steps:
                 plan_step.status = "approved"
-            append_or_refine_section(envelope, agent_name="crm_agent", section_value=action)
-            envelope.action_plan = crm_action_plan
+            action.status = "approved"
             set_stage(envelope, "action_done")
             self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
-            self.action_repo.upsert_action(run_id, deal_id, action)
-            self.action_repo.upsert_action_plan(run_id, deal_id, action.action_id, crm_action_plan)
-            self._snapshot(deal_id, envelope, source_agent="crm_agent")
-            outcome = self._outcome_from_raw_data(envelope.raw_data)
-            self.resume_after_approval(envelope, outcome, workflow_id=workflow_id)
-            return False
 
-        if step in {"execution_agent", "evaluator_agent"}:
-            return True
+        append_or_refine_section(envelope, agent_name="action_agent", section_value=action)
+        envelope.action_plan = action_plan
+        self.action_repo.upsert_action(run_id, deal_id, action)
+        self.action_repo.upsert_action_plan(run_id, deal_id, action.action_id, action_plan)
+        self._snapshot(deal_id, envelope, source_agent="action_agent")
+        self.long_memory.add_outcome(
+            OutcomeRecord(deal_id=deal_id, action_id=action.action_id, outcome_label="pending", insight="Action created")
+        )
+        return False
 
-        raise ValueError(f"Unsupported workflow step: {step}")
+    def _handle_crm_agent_step(self, workflow_id: str, step: str, deal_id: str, run_id: str, envelope: ContextEnvelope) -> bool:
+        crm_action_plan = self._execute_with_step_audit(
+            workflow_id=workflow_id,
+            step=step,
+            fn=lambda: crm_agent(
+                envelope.raw_data,
+                envelope.deal_context,
+                envelope.decision_context,
+                workflow_id=workflow_id,
+                run_id=run_id,
+            ),
+        )
+        if not crm_action_plan.steps:
+            raise ValueError("crm_agent returned an empty action plan")
+        first_step = sorted(crm_action_plan.steps, key=lambda item: item.order)[0]
+        action = ActionContext(
+            action_id=first_step.step_id,
+            type=first_step.action_type,
+            subject=first_step.subject,
+            preview=first_step.preview,
+            body_draft=first_step.body_draft,
+            status="approved",
+            reasoning=crm_action_plan.reasoning,
+            confidence=crm_action_plan.confidence,
+        )
+        crm_action_plan.status = "approved"
+        for plan_step in crm_action_plan.steps:
+            plan_step.status = "approved"
+        append_or_refine_section(envelope, agent_name="crm_agent", section_value=action)
+        envelope.action_plan = crm_action_plan
+        set_stage(envelope, "action_done")
+        self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+        self.action_repo.upsert_action(run_id, deal_id, action)
+        self.action_repo.upsert_action_plan(run_id, deal_id, action.action_id, crm_action_plan)
+        self._snapshot(deal_id, envelope, source_agent="crm_agent")
+        outcome = self._outcome_from_raw_data(envelope.raw_data)
+        self.resume_after_approval(envelope, outcome, workflow_id=workflow_id)
+        return False
 
     def resume_after_approval(
         self,
