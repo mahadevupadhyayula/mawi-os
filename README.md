@@ -30,12 +30,20 @@ This is enabled through:
 
 ## 🧩 System Architecture
 
-The MVP follows a multi-agent, context-centric architecture:
+MAWI uses a staged rollout model while preserving one shared multi-agent architecture.
+
+### Stage 1 / 2 / 3 Rollout Model
+
+- **Stage 1 (MVP execution wedge):** deal follow-up + new-deal outreach, human approval gate by default, basic evaluation/memory loop.
+- **Stage 2 (deal intelligence expansion):** adds risk/intervention and CRM synchronization workflows on the same orchestrator contracts.
+- **Stage 3 (autonomous platform):** planned guardrailed autonomy, dynamic orchestration, and cross-deal optimization.
+
+### Shared Architecture Layers
 
 1. **Input / Signal Layer** — detects workflow-relevant events
 2. **Context Layer** — normalizes and carries state between agents
-3. **Agent Layer** — strategy, action generation, execution, and evaluation agents
-4. **Tool / Action Layer** — external action adapters (email/CRM stubs)
+3. **Agent Layer** — strategy, action generation, execution, CRM, and evaluation agents
+4. **Tool / Action Layer** — external action adapters (email/CRM/SMS/deal systems)
 5. **Orchestration Layer** — stage sequencing, retries, audit logging
 6. **Memory Layer** — short- and long-term storage for history and insights
 7. **Human-in-the-loop Layer** — approval policies and action queue
@@ -146,7 +154,19 @@ Only workflows with end-to-end code evidence are marked **Implemented**.
   - Registry exposure: [`workflows/registry.py`](./workflows/registry.py)
   - Orchestration, execution, evaluation, and persistence path: same core modules as deal follow-up (runner, execution agent, evaluator, and repositories listed above).
 
-- **Planned workflows in Phase 2/3 roadmap** — **Not Implemented** unless explicitly stated in [`current-workflow.md`](./current-workflow.md) and backed by code.
+- **Deal Intervention (`deal_intervention_workflow`)** — **Implemented**.
+  - Trigger + thresholds: [`workflows/triggers.py`](./workflows/triggers.py)
+  - Workflow definition + stages: [`workflows/deal_intervention_workflow.py`](./workflows/deal_intervention_workflow.py)
+  - Registry exposure: [`workflows/registry.py`](./workflows/registry.py)
+  - API run path + intervention logging: [`api/router.py`](./api/router.py), [`api/service.py`](./api/service.py), [`data/repositories/intervention_log_repo.py`](./data/repositories/intervention_log_repo.py)
+
+- **CRM Sync (`crm_sync_workflow`)** — **Implemented**.
+  - Trigger + post-action/API trigger contract: [`workflows/triggers.py`](./workflows/triggers.py)
+  - Workflow definition + stages: [`workflows/crm_sync_workflow.py`](./workflows/crm_sync_workflow.py)
+  - Registry exposure: [`workflows/registry.py`](./workflows/registry.py)
+  - API run path + sync-status/logging: [`api/router.py`](./api/router.py), [`api/service.py`](./api/service.py), [`data/repositories/crm_sync_log_repo.py`](./data/repositories/crm_sync_log_repo.py)
+
+- **Planned workflows not listed above** — **Not Implemented** unless explicitly stated in [`current-workflow.md`](./current-workflow.md) and backed by code.
 
 ### Implemented Workflow Update Policy
 
@@ -182,8 +202,17 @@ main.py         # Local demo entrypoint
 ## 🔁 Workflow Execution Flow
 
 ```text
-Input -> Signal -> Context -> Strategy -> Action -> Approval -> Execution -> Evaluation -> Memory
+Input -> Signal -> Context -> Strategy/CRM Planning -> Action Plan -> Approval (policy) -> Execution -> Evaluation -> Memory
 ```
+
+### Stage-specific runtime paths
+
+- **Stage 1 default path** (`deal_followup_workflow`, `new_deal_outreach_workflow`):
+  `signal_agent -> context_agent -> strategist_agent -> action_agent -> execution_agent -> evaluator_agent`
+- **Stage 2 intervention path** (`deal_intervention_workflow`):
+  `signal_agent -> context_agent -> strategist_agent -> action_agent -> execution_agent -> evaluator_agent`
+- **Stage 2 CRM sync path** (`crm_sync_workflow`):
+  `signal_agent -> context_agent -> crm_agent -> execution_agent -> evaluator_agent`
 
 ---
 
@@ -364,8 +393,12 @@ Known error values:
 1) **Start workflow**
 
 - **POST** `/api/workflows/start?workflow=deal-followup`
+- **Also supported:**
+  - alias `workflow=crm-sync`
+  - explicit workflow IDs: `deal_followup_workflow`, `new_deal_outreach_workflow`, `deal_intervention_workflow`, `crm_sync_workflow`
 - **Maps to:** `WorkflowAPI.start_workflow(deal_id, workflow_name=...)`
 - **Workflow validation:** query value is alias-resolved then checked with `is_known_workflow`.
+- **CRM sync note:** when `workflow=crm-sync` (or `crm_sync_workflow`) the API injects explicit trigger context (`trigger_source=api`, `trigger_event=explicit`).
 - **Request body:**
 
 ```json
@@ -504,6 +537,24 @@ Known error values:
   "message": "Deal state not found"
 }
 ```
+
+7) **Run intervention workflow (explicit endpoint)**
+
+- **POST** `/api/workflows/intervention/run`
+- **Maps to:** `WorkflowAPI.run_intervention_workflow(deal_id)`
+- **Success response (200):** returns a workflow envelope with `workflow_id=deal_intervention_workflow`.
+
+8) **Run CRM sync workflow (explicit endpoint)**
+
+- **POST** `/api/workflows/crm-sync/run`
+- **Maps to:** `WorkflowAPI.run_crm_sync_workflow(deal_id)`
+- **Success response (200):** returns a workflow envelope with `workflow_id=crm_sync_workflow`.
+
+9) **Get CRM sync status**
+
+- **GET** `/api/crm/sync-status?deal_id=...` (or `run_id=...`)
+- **Maps to:** `WorkflowAPI.get_crm_sync_status(deal_id=..., run_id=...)`
+- **Success response (200):** includes `sync_status`, `synced_at`, `error_message`, and `updated_at`.
 
 ---
 
