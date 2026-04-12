@@ -8,10 +8,11 @@ Uses prompt templates plus lightweight persona-aware rules to build structured A
 
 from __future__ import annotations
 
+import json
 from uuid import uuid4
 
 from agents.contracts import make_result
-from agents.prompt_templates import render_prompt
+from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
 from context.models import ActionPlanContext, ActionStep, DealContext, DecisionContext
 
 
@@ -99,13 +100,31 @@ def action_agent(
             status="draft",
         ),
     ]
+    validation = validate_model_output_json(
+        model_output=json.dumps(
+            {
+                "plan_id": str(uuid4()),
+                "steps": [step.__dict__ for step in steps],
+                "status": "draft",
+                "reasoning": reasoning,
+                "confidence": confidence,
+            }
+        ),
+        required_json_fields=required_json_fields(ActionPlanContext),
+        stage_name="action_agent",
+    )
+    if not validation["ok"]:
+        raise PromptLintError(f"action_agent output failed validation: {validation['errors']}")
+    payload = validation["payload"]
+    assert isinstance(payload, dict)
+
     result = make_result(
         ActionPlanContext(
-            plan_id=str(uuid4()),
+            plan_id=str(payload["plan_id"]),
             steps=steps,
-            status="draft",
-            reasoning=reasoning,
-            confidence=confidence,
+            status=str(payload["status"]),
+            reasoning=str(payload["reasoning"]),
+            confidence=float(payload["confidence"]),
         ),
         reasoning,
         confidence,

@@ -197,6 +197,78 @@ def _required_json_fields(output_model: type) -> list[str]:
     return [field.name for field in fields(output_model) if field.name != "meta"]
 
 
+def required_json_fields(output_model: type) -> list[str]:
+    """Public helper for resolving required payload fields from an output dataclass."""
+    return _required_json_fields(output_model)
+
+
+def validate_model_output_json(
+    *,
+    model_output: str,
+    required_json_fields: list[str],
+    stage_name: str,
+) -> dict[str, Any]:
+    """Parse and validate model output JSON for orchestrator/audit consumers."""
+    errors: list[dict[str, Any]] = []
+    payload: Any = None
+    try:
+        payload = json.loads(model_output)
+    except json.JSONDecodeError as exc:
+        errors.append(
+            {
+                "code": "invalid_json",
+                "stage_name": stage_name,
+                "message": "Model output is not valid JSON.",
+                "details": {"error": str(exc)},
+            }
+        )
+        return {"ok": False, "payload": None, "errors": errors}
+
+    if not isinstance(payload, dict):
+        errors.append(
+            {
+                "code": "invalid_payload_type",
+                "stage_name": stage_name,
+                "message": "Model output JSON must decode to an object.",
+                "details": {"parsed_type": type(payload).__name__},
+            }
+        )
+        return {"ok": False, "payload": None, "errors": errors}
+
+    missing_fields = [field for field in required_json_fields if field not in payload]
+    if missing_fields:
+        errors.append(
+            {
+                "code": "missing_required_fields",
+                "stage_name": stage_name,
+                "message": "Model output is missing required fields.",
+                "details": {"missing_fields": missing_fields},
+            }
+        )
+
+    confidence = payload.get("confidence")
+    if not isinstance(confidence, (int, float)):
+        errors.append(
+            {
+                "code": "invalid_confidence_type",
+                "stage_name": stage_name,
+                "message": "confidence must be numeric.",
+                "details": {"value": confidence},
+            }
+        )
+    elif not 0.0 <= float(confidence) <= 1.0:
+        errors.append(
+            {
+                "code": "invalid_confidence_range",
+                "stage_name": stage_name,
+                "message": "confidence must be within [0, 1].",
+                "details": {"value": confidence},
+            }
+        )
+
+    return {"ok": not errors, "payload": payload if not errors else None, "errors": errors}
+
+
 def _extract_prompt_schema_version(template_text: str, name: str) -> str:
     match = re.search(r"^schema_version:\s*(\S+)\s*$", template_text, flags=re.MULTILINE)
     if not match:
