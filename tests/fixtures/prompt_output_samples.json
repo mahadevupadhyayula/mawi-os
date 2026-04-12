@@ -17,10 +17,10 @@
     "recommended_tone": "consultative"
   },
   "intervention_prompt.txt": {
-    "reasoning": "Multiple high-frequency sends and negative sentiment indicate escalating risk.",
+    "reasoning": "Intervention decision selected from urgency and risk signals.",
     "confidence": 0.86,
     "result": "intervene",
-    "reason": "Pause automation and require human review before additional outreach."
+    "reason": "High urgency or risk objection detected; intervention strategy should be prioritized."
   },
   "strategist_prompt.txt": {
     "reasoning": "Recommend value reminder with low-friction CTA.",
