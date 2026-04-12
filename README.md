@@ -127,11 +127,11 @@ If one or more criteria are incomplete, the workflow is **Partial**.
 - generate initial insights
 - persist insights to memory stores
 
-## ✅ Current Implemented Workflows
+## ✅ Current Workflow Implementation Status
 
-Only workflows with code currently present in this repository are listed here.
+Only workflows with end-to-end code evidence are marked **Implemented**.
 
-- **SaaS Sales Deal Follow-up Execution** — **Implemented** (MVP target).
+- **SaaS Sales Deal Follow-up Execution (`deal_followup_workflow`)** — **Implemented**.
   - Trigger: [`workflows/triggers.py`](./workflows/triggers.py)
   - Workflow definition + stages: [`workflows/deal_followup_workflow.py`](./workflows/deal_followup_workflow.py)
   - Orchestration + state progression: [`orchestrator/runner.py`](./orchestrator/runner.py), [`orchestrator/state_machine.py`](./orchestrator/state_machine.py)
@@ -140,7 +140,13 @@ Only workflows with code currently present in this repository are listed here.
   - Persistence + audit trail: [`data/repositories/workflow_repo.py`](./data/repositories/workflow_repo.py), [`data/repositories/action_repo.py`](./data/repositories/action_repo.py), [`data/repositories/outcome_repo.py`](./data/repositories/outcome_repo.py), [`orchestrator/audit_logger.py`](./orchestrator/audit_logger.py)
   - API orchestration entry points: [`api/service.py`](./api/service.py), [`api/router.py`](./api/router.py)
 
-- **All other named roadmap workflows** — **Not Implemented yet** (tracked in [`BACKLOG.md`](./BACKLOG.md)).
+- **New Deal Outreach (`new_deal_outreach_workflow`)** — **Implemented**.
+  - Trigger: [`workflows/triggers.py`](./workflows/triggers.py)
+  - Workflow definition + stages: [`workflows/new_deal_outreach_workflow.py`](./workflows/new_deal_outreach_workflow.py)
+  - Registry exposure: [`workflows/registry.py`](./workflows/registry.py)
+  - Orchestration, execution, evaluation, and persistence path: same core modules as deal follow-up (runner, execution agent, evaluator, and repositories listed above).
+
+- **Planned workflows in Phase 2/3 roadmap** — **Not Implemented** unless explicitly stated in [`current-workflow.md`](./current-workflow.md) and backed by code.
 
 ### Implemented Workflow Update Policy
 

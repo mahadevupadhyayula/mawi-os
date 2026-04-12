@@ -44,6 +44,7 @@ Roadmap organization:
 ### Included
 
 - Deal follow-up workflow for stalled opportunities **[Implemented]**
+- New deal outreach workflow for day-0 opportunities **[Implemented]**
 - Signal → strategy → action pipeline **[Implemented]**
 - Approval queue and policy-based human gate **[Implemented]**
 - Tool execution stubs (email/CRM) **[Implemented]**
@@ -62,7 +63,7 @@ Roadmap organization:
 
 ### New Workflows
 
-- New Deal Outreach Workflow **[Not Implemented]**
+- New Deal Outreach Workflow **[Implemented]**
 - Deal Risk Detection Workflow **[Not Implemented]**
 - Deal Intervention Workflow **[Not Implemented]**
 - Multi-threading Workflow **[Not Implemented]**
