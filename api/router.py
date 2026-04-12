@@ -69,10 +69,13 @@ def start_workflow(
 ) -> dict[str, Any] | JSONResponse:
     try:
         selected_workflow = _resolve_workflow_name(workflow)
+        trigger_context: dict[str, str] | None = None
+        if selected_workflow == "crm_sync_workflow":
+            trigger_context = {"trigger_source": "api", "trigger_event": "explicit"}
         return service.start_workflow(
             payload.deal_id,
             workflow_name=selected_workflow,
-            trigger_context={"trigger_source": "api", "trigger_event": "explicit"},
+            trigger_context=trigger_context,
         )
     except ValueError as exc:
         return _error_response(status.HTTP_400_BAD_REQUEST, "unknown_workflow", str(exc))

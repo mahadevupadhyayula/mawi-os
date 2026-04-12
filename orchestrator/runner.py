@@ -340,66 +340,22 @@ class WorkflowOrchestrator:
             self.action_repo.upsert_action(run_id, deal_id, action)
             self.action_repo.upsert_action_plan(run_id, deal_id, action.action_id, crm_action_plan)
             self._snapshot(deal_id, envelope, source_agent="crm_agent")
-            return True
-
-        if step == "execution_agent":
-            action_ctx = envelope.action_context
-            action_plan = envelope.action_plan
-            if action_ctx is None or action_plan is None:
-                raise ValueError("Missing approved action plan for execution stage")
-            execution = self._execute_with_step_audit(
-                workflow_id=workflow_id,
-                step=step,
-                fn=lambda: execution_agent(
-                    action_plan,
-                    deal_id=deal_id,
-                    contact_name=envelope.raw_data.get("contact_name", "Prospect"),
-                    workflow_id=workflow_id,
-                    execution_phase="autonomous",
-                    run_id=run_id,
-                ),
-            )
-            append_or_refine_section(envelope, agent_name="execution_agent", section_value=execution)
-            set_stage(envelope, "execution_done")
-            self.outcome_repo.record_execution(run_id, deal_id, action_ctx.action_id, execution)
-            self.action_repo.upsert_action_plan(run_id, deal_id, action_ctx.action_id, action_plan)
-            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
-            self._snapshot(deal_id, envelope, source_agent="execution_agent")
-            return True
-
-        if step == "evaluator_agent":
-            action_ctx = envelope.action_context
-            execution_ctx = envelope.execution_context
-            if action_ctx is None or execution_ctx is None:
-                raise ValueError("Missing execution context for evaluator stage")
             outcome = self._outcome_from_raw_data(envelope.raw_data)
-            outcome_ctx = self._execute_with_step_audit(
-                workflow_id=workflow_id,
-                step=step,
-                fn=lambda: evaluator_agent(
-                    execution_ctx,
-                    outcome,
-                    workflow_id=workflow_id,
-                    run_id=run_id,
-                ),
-            )
-            append_or_refine_section(envelope, agent_name="evaluator_agent", section_value=outcome_ctx)
-            set_stage(envelope, "evaluation_done")
-            self.outcome_repo.record_outcome(run_id, deal_id, action_ctx.action_id, outcome_ctx)
-            attach_prompt_outcome(run_id=run_id, outcome_label=outcome_ctx.outcome_label)
-            attach_prompt_outcome_metrics(
-                run_id=run_id,
-                reply_received=outcome.reply_received,
-                meeting_booked=outcome.meeting_booked,
-                execution_success=execution_ctx.status == "executed",
-            )
-            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_COMPLETED, complete=True)
-            self._snapshot(deal_id, envelope, source_agent="evaluator_agent")
+            self.resume_after_approval(envelope, outcome, workflow_id=workflow_id)
+            return False
+
+        if step in {"execution_agent", "evaluator_agent"}:
             return True
 
         raise ValueError(f"Unsupported workflow step: {step}")
 
-    def resume_after_approval(self, envelope: ContextEnvelope, outcome: ExecutionOutcome) -> ContextEnvelope:
+    def resume_after_approval(
+        self,
+        envelope: ContextEnvelope,
+        outcome: ExecutionOutcome,
+        *,
+        workflow_id: str = "deal_followup_workflow",
+    ) -> ContextEnvelope:
         action_ctx = envelope.action_context
         if action_ctx is None:
             raise ValueError("Missing action_context")
@@ -454,7 +410,7 @@ class WorkflowOrchestrator:
                     action_plan,
                     deal_id=envelope.meta.deal_id,
                     contact_name=envelope.raw_data.get("contact_name", "Prospect"),
-                    workflow_id="deal_followup_workflow",
+                    workflow_id=workflow_id,
                     execution_phase="human_review",
                     run_id=run_id,
                 ),
@@ -479,7 +435,7 @@ class WorkflowOrchestrator:
                 fn=lambda: evaluator_agent(
                     execution,
                     outcome,
-                    workflow_id="deal_followup_workflow",
+                    workflow_id=workflow_id,
                     run_id=run_id,
                 ),
             )
