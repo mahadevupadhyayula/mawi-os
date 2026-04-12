@@ -16,14 +16,28 @@ Status tags used in this document:
 A workflow is **Implemented** when all five criteria exist in code:
 **trigger + orchestration + execution + evaluation + persistence**.
 
-Evidence references for current MVP implementation:
+Evidence references for implemented workflows (promotion requires all five criteria):
 
-- Workflow: [`workflows/deal_followup_workflow.py`](./workflows/deal_followup_workflow.py)
-- Trigger/registry: [`workflows/triggers.py`](./workflows/triggers.py), [`workflows/registry.py`](./workflows/registry.py)
-- Orchestration: [`orchestrator/runner.py`](./orchestrator/runner.py)
-- Execution paths: [`agents/execution_agent.py`](./agents/execution_agent.py), [`tools/email_tool.py`](./tools/email_tool.py), [`tools/crm_tool.py`](./tools/crm_tool.py)
-- Evaluation: [`agents/evaluator_agent.py`](./agents/evaluator_agent.py), [`evaluation/outcome_analyzer.py`](./evaluation/outcome_analyzer.py)
-- Persistence: [`data/repositories/workflow_repo.py`](./data/repositories/workflow_repo.py), [`data/repositories/action_repo.py`](./data/repositories/action_repo.py), [`data/repositories/outcome_repo.py`](./data/repositories/outcome_repo.py)
+- **`deal_followup_workflow` [Implemented]**
+  - Trigger/registry: [`workflows/triggers.py`](./workflows/triggers.py), [`workflows/registry.py`](./workflows/registry.py)
+  - Orchestration: [`orchestrator/runner.py`](./orchestrator/runner.py)
+  - Execution: [`agents/execution_agent.py`](./agents/execution_agent.py), [`tools/email_tool.py`](./tools/email_tool.py), [`tools/crm_tool.py`](./tools/crm_tool.py)
+  - Evaluation: [`agents/evaluator_agent.py`](./agents/evaluator_agent.py), [`evaluation/outcome_analyzer.py`](./evaluation/outcome_analyzer.py)
+  - Persistence: [`data/repositories/workflow_repo.py`](./data/repositories/workflow_repo.py), [`data/repositories/action_repo.py`](./data/repositories/action_repo.py), [`data/repositories/outcome_repo.py`](./data/repositories/outcome_repo.py)
+
+- **`new_deal_outreach_workflow` [Implemented]**
+  - Trigger/registry/workflow: [`workflows/triggers.py`](./workflows/triggers.py), [`workflows/registry.py`](./workflows/registry.py), [`workflows/new_deal_outreach_workflow.py`](./workflows/new_deal_outreach_workflow.py)
+  - Orchestration/execution/evaluation/persistence: shared core path via runner, execution agent, evaluator, and repositories above.
+
+- **`deal_intervention_workflow` [Implemented]**
+  - Trigger/workflow/registry: [`workflows/triggers.py`](./workflows/triggers.py), [`workflows/deal_intervention_workflow.py`](./workflows/deal_intervention_workflow.py), [`workflows/registry.py`](./workflows/registry.py)
+  - Orchestration/execution/evaluation/persistence: [`orchestrator/runner.py`](./orchestrator/runner.py), [`agents/execution_agent.py`](./agents/execution_agent.py), [`agents/evaluator_agent.py`](./agents/evaluator_agent.py), [`data/repositories/workflow_repo.py`](./data/repositories/workflow_repo.py)
+  - API evidence: [`api/service.py`](./api/service.py), [`api/router.py`](./api/router.py), [`data/repositories/intervention_log_repo.py`](./data/repositories/intervention_log_repo.py)
+
+- **`crm_sync_workflow` [Implemented]**
+  - Trigger/workflow/registry: [`workflows/triggers.py`](./workflows/triggers.py), [`workflows/crm_sync_workflow.py`](./workflows/crm_sync_workflow.py), [`workflows/registry.py`](./workflows/registry.py)
+  - Orchestration/execution/evaluation/persistence: [`orchestrator/runner.py`](./orchestrator/runner.py), [`agents/crm_agent.py`](./agents/crm_agent.py), [`agents/execution_agent.py`](./agents/execution_agent.py), [`agents/evaluator_agent.py`](./agents/evaluator_agent.py), [`data/repositories/workflow_repo.py`](./data/repositories/workflow_repo.py)
+  - API evidence: [`api/service.py`](./api/service.py), [`api/router.py`](./api/router.py), [`data/repositories/crm_sync_log_repo.py`](./data/repositories/crm_sync_log_repo.py)
 
 Status maintenance rule:
 
@@ -65,10 +79,11 @@ Roadmap organization:
 
 - New Deal Outreach Workflow **[Implemented]**
 - Deal Risk Detection Workflow **[Not Implemented]**
-- Deal Intervention Workflow **[Not Implemented]**
+- Deal Intervention Workflow **[Implemented]**
 - Multi-threading Workflow **[Not Implemented]**
 - Meeting Follow-up Workflow **[Not Implemented]**
 - Objection Handling Workflow **[Not Implemented]**
+- CRM Sync Workflow **[Implemented]**
 - Multi-channel Outreach Workflow **[Not Implemented]**
 - Adaptive Sequencing Workflow **[Not Implemented]**
 

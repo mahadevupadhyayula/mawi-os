@@ -10,8 +10,9 @@ This file tracks workflow implementation status based on the repository's implem
 | `deal_followup_workflow` | Implemented | End-to-end trigger, orchestration, execution, evaluation, and persistence are in place. |
 | `new_deal_outreach_workflow` | Implemented | Triggered for day-0 deals with no prior outbound activity; uses the same end-to-end orchestration/evaluation/persistence path as follow-up. |
 | `deal_risk_detection_workflow` | Not implemented | Planned in roadmap only. |
-| `deal_intervention_workflow` | Not implemented | Planned in roadmap only. |
-| `multi_threading_workflow` | Not implemented | Planned in roadmap only. |
+| `deal_intervention_workflow` | Implemented | Triggered by stalled/no-reply/high-risk signals; registered and runnable via API + orchestration path. |
+| `crm_sync_workflow` | Implemented | Triggered by explicit API request or post-action CRM sync events; uses `crm_agent` execution path and sync-status logging. |
+| `multi_threading_workflow` | Not implemented | Planned in roadmap only (not registered). |
 | `meeting_followup_workflow` | Not implemented | Planned in roadmap only. |
 | `objection_handling_workflow` | Not implemented | Planned in roadmap only. |
 | `multi_channel_outreach_workflow` | Not implemented | Planned in roadmap only. |
@@ -22,8 +23,10 @@ This file tracks workflow implementation status based on the repository's implem
 
 ## Current Runtime Behavior
 
-- **Registered workflows:** `deal_followup_workflow`, `new_deal_outreach_workflow`.
+- **Registered workflows:** `crm_sync_workflow`, `deal_followup_workflow`, `deal_intervention_workflow`, `new_deal_outreach_workflow`.
 - **Trigger behavior:**
   - `deal_followup_workflow`: runs when `should_trigger_deal_followup` passes (`days_since_reply >= 5`).
   - `new_deal_outreach_workflow`: runs when `should_trigger_new_deal_outreach` passes (`days_since_reply == 0` and no prior outbound markers).
+  - `deal_intervention_workflow`: runs on `deal_stalled`/`no_reply`, explicit `risk_tier` high/critical, or inferred high-risk score thresholds.
+  - `crm_sync_workflow`: runs for explicit API CRM sync requests or post-action execution events with execution references/sync-required payloads.
 - **Approval behavior:** action plans are auto-approved if confidence meets threshold; otherwise they are queued for human approval (`waiting_approval`) before execution.
