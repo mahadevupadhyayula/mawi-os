@@ -38,6 +38,10 @@ def test_new_deal_outreach_trigger_behavior() -> None:
     assert should_trigger_new_deal_outreach({"days_since_reply": 0, "outbound_count": 2}) is False
 
 
+def test_new_deal_workflow_definition_includes_execution_then_evaluator() -> None:
+    assert WORKFLOW_STEPS.index("execution_agent") < WORKFLOW_STEPS.index("evaluator_agent")
+
+
 def test_new_deal_runner_step_order_and_gated_progression(reset_db, monkeypatch) -> None:
     deal_id = "deal-new-gated"
     payload = _new_deal_payload(deal_id=deal_id, outbound_count=0, budget_objection=True)

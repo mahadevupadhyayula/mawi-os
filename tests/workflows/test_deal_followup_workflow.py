@@ -29,6 +29,10 @@ def test_deal_followup_trigger_behavior() -> None:
     assert should_trigger_deal_followup({"days_since_reply": 4}) is False
 
 
+def test_followup_workflow_definition_includes_execution_then_evaluator() -> None:
+    assert WORKFLOW_STEPS.index("execution_agent") < WORKFLOW_STEPS.index("evaluator_agent")
+
+
 def test_followup_runner_step_order_and_gated_progression(reset_db, monkeypatch) -> None:
     deal_id = "deal-followup-gated"
     payload = _followup_payload(deal_id=deal_id, budget_objection=True)
