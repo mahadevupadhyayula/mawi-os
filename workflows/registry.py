@@ -14,11 +14,19 @@ from typing import Any, Callable
 from agents.prompt_blocks import block_pack_for_workflow_type, merge_prompt_blocks
 
 from workflows.deal_followup_workflow import WORKFLOW_NAME, WORKFLOW_STEPS
+from workflows.deal_intervention_workflow import (
+    WORKFLOW_NAME as DEAL_INTERVENTION_WORKFLOW_NAME,
+    WORKFLOW_STEPS as DEAL_INTERVENTION_WORKFLOW_STEPS,
+)
 from workflows.new_deal_outreach_workflow import (
     WORKFLOW_NAME as NEW_DEAL_WORKFLOW_NAME,
     WORKFLOW_STEPS as NEW_DEAL_WORKFLOW_STEPS,
 )
-from workflows.triggers import should_trigger_deal_followup, should_trigger_new_deal_outreach
+from workflows.triggers import (
+    should_trigger_deal_followup,
+    should_trigger_deal_intervention,
+    should_trigger_new_deal_outreach,
+)
 
 
 @dataclass(frozen=True)
@@ -55,6 +63,19 @@ WORKFLOW_REGISTRY: dict[str, WorkflowMetadata] = {
                 "autonomous": "low",
                 "human_review": "medium",
             }
+        },
+    ),
+    DEAL_INTERVENTION_WORKFLOW_NAME: WorkflowMetadata(
+        workflow_id=DEAL_INTERVENTION_WORKFLOW_NAME,
+        steps=DEAL_INTERVENTION_WORKFLOW_STEPS,
+        trigger=should_trigger_deal_intervention,
+        config={
+            "release_version": "2026.04.1",
+            "max_risk_tier_by_phase": {
+                "default": "critical",
+                "autonomous": "medium",
+                "human_review": "critical",
+            },
         },
     ),
 }
