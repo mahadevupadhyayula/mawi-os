@@ -18,6 +18,7 @@ ALLOWED_SECTION_WRITES = {
     "signal_agent": "signal_context",
     "context_agent": "deal_context",
     "strategist_agent": "decision_context",
+    "intervention_agent": "intervention_decision_context",
     "action_agent": "action_context",
     "crm_agent": "action_context",
     "execution_agent": "execution_context",

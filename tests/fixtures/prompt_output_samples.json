@@ -12,9 +12,21 @@
     "confidence": 0.81,
     "persona": "VP Sales",
     "deal_stage": "evaluation",
-    "known_objections": ["budget", "security"],
-    "recent_timeline": ["Intro call complete", "Security review requested"],
+    "known_objections": [
+      "budget",
+      "security"
+    ],
+    "recent_timeline": [
+      "Intro call complete",
+      "Security review requested"
+    ],
     "recommended_tone": "consultative"
+  },
+  "intervention_prompt.txt": {
+    "reasoning": "Intervention decision selected from urgency and risk signals.",
+    "confidence": 0.86,
+    "result": "intervene",
+    "reason": "High urgency or risk objection detected; intervention strategy should be prioritized."
   },
   "strategist_prompt.txt": {
     "reasoning": "Recommend value reminder with low-friction CTA.",
@@ -23,7 +35,12 @@
     "strategy_type": "value_reinforcement",
     "message_goal": "Restart conversation and schedule follow-up.",
     "fallback_strategy": "share_customer_story",
-    "memory_evidence_used": [{"source": "outcome_repo", "note": "case studies help"}],
+    "memory_evidence_used": [
+      {
+        "source": "outcome_repo",
+        "note": "case studies help"
+      }
+    ],
     "memory_confidence_impact": 0.12,
     "memory_rationale": "Historical wins for similar stage/deal size."
   },
@@ -53,9 +70,18 @@
     "confidence": 0.74,
     "execution_id": "exec_123",
     "status": "executed",
-    "email_result": {"sent": true},
-    "crm_result": {"updated": true},
-    "tool_events": [{"tool": "email", "status": "ok"}]
+    "email_result": {
+      "sent": true
+    },
+    "crm_result": {
+      "updated": true
+    },
+    "tool_events": [
+      {
+        "tool": "email",
+        "status": "ok"
+      }
+    ]
   },
   "evaluator_prompt.txt": {
     "reasoning": "Outcome indicates improved engagement.",
@@ -63,5 +89,11 @@
     "outcome_label": "positive_engagement",
     "insight": "Prospect requested a follow-up demo.",
     "recommended_adjustment": "Repeat concise CTA format in next sequence."
+  },
+  "intervention_prompt.txt": {
+    "reasoning": "Intervention decision selected from urgency and risk signals.",
+    "confidence": 0.86,
+    "result": "intervene",
+    "reason": "High urgency or risk objection detected; intervention strategy should be prioritized."
   }
 }
