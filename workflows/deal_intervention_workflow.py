@@ -12,6 +12,7 @@ WORKFLOW_NAME = "deal_intervention_workflow"
 WORKFLOW_STEPS = [
     "signal_agent",
     "context_agent",
+    "intervention_agent",
     "strategist_agent",
     "action_agent",
     "execution_agent",
