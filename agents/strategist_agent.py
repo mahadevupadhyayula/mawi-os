@@ -8,8 +8,10 @@ Renders strategist prompt templates, applies deterministic strategy selection lo
 
 from __future__ import annotations
 
+import json
+
 from agents.contracts import make_result
-from agents.prompt_templates import render_prompt
+from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
 from context.models import DealContext, DecisionContext, SignalContext
 
 
@@ -59,17 +61,38 @@ def strategist_agent(
             f"and apply confidence impact +{memory_confidence_impact:.3f}."
         )
         reasoning = f"Selected {strategy_type} based on objections and urgency={signal_context.urgency}. {memory_rationale}"
+    validation = validate_model_output_json(
+        model_output=json.dumps(
+            {
+                "strategy_id": f"strat-{strategy_type}",
+                "strategy_type": strategy_type,
+                "message_goal": "restart_conversation",
+                "fallback_strategy": "social_proof",
+                "memory_evidence_used": evidence,
+                "memory_confidence_impact": memory_confidence_impact,
+                "memory_rationale": memory_rationale,
+                "reasoning": reasoning,
+                "confidence": confidence,
+            }
+        ),
+        required_json_fields=required_json_fields(DecisionContext),
+        stage_name="strategist_agent",
+    )
+    if not validation["ok"]:
+        raise PromptLintError(f"strategist_agent output failed validation: {validation['errors']}")
+    payload = validation["payload"]
+    assert isinstance(payload, dict)
     result = make_result(
         DecisionContext(
-            strategy_id=f"strat-{strategy_type}",
-            strategy_type=strategy_type,
-            message_goal="restart_conversation",
-            fallback_strategy="social_proof",
-            memory_evidence_used=evidence,
-            memory_confidence_impact=memory_confidence_impact,
-            memory_rationale=memory_rationale,
-            reasoning=reasoning,
-            confidence=confidence,
+            strategy_id=str(payload["strategy_id"]),
+            strategy_type=str(payload["strategy_type"]),
+            message_goal=str(payload["message_goal"]),
+            fallback_strategy=str(payload["fallback_strategy"]),
+            memory_evidence_used=list(payload["memory_evidence_used"]),
+            memory_confidence_impact=float(payload["memory_confidence_impact"]),
+            memory_rationale=str(payload["memory_rationale"]),
+            reasoning=str(payload["reasoning"]),
+            confidence=float(payload["confidence"]),
         ),
         reasoning,
         confidence,

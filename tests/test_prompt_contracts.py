@@ -6,7 +6,9 @@ from agents.prompt_templates import (
     generate_prompt_health_report,
     get_prompt_fallback_telemetry,
     load_prompt_manifest,
+    required_json_fields,
     render_prompt,
+    validate_model_output_json,
     validate_prompt_health_report,
 )
 from context.models import DealContext
@@ -201,6 +203,39 @@ class TestPromptContracts(unittest.TestCase):
         self.assertIn(first_entry["status"], {"draft", "active", "deprecated"})
         self.assertTrue(first_entry["owner"])
         self.assertTrue(first_entry["changelog"])
+
+    def test_validate_model_output_json_returns_structured_error_for_missing_fields(self) -> None:
+        report = validate_model_output_json(
+            model_output='{"reasoning":"ok","confidence":0.8}',
+            required_json_fields=required_json_fields(DealContext),
+            stage_name="context_agent",
+        )
+        self.assertFalse(report["ok"])
+        self.assertIsNone(report["payload"])
+        self.assertEqual(report["errors"][0]["code"], "missing_required_fields")
+        self.assertEqual(report["errors"][0]["stage_name"], "context_agent")
+        self.assertIn("persona", report["errors"][0]["details"]["missing_fields"])
+
+    def test_validate_model_output_json_rejects_out_of_range_confidence(self) -> None:
+        report = validate_model_output_json(
+            model_output='{"reasoning":"ok","confidence":1.2,"stalled":true,"days_since_reply":7,'
+            '"urgency":"high","trigger_reason":"no_reply_5_days"}',
+            required_json_fields=["reasoning", "confidence", "stalled", "days_since_reply", "urgency", "trigger_reason"],
+            stage_name="signal_agent",
+        )
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["errors"][0]["code"], "invalid_confidence_range")
+
+    def test_validate_model_output_json_accepts_valid_payload(self) -> None:
+        report = validate_model_output_json(
+            model_output='{"reasoning":"ok","confidence":0.6,"stalled":false,"days_since_reply":1,'
+            '"urgency":"low","trigger_reason":"not_stalled"}',
+            required_json_fields=["reasoning", "confidence", "stalled", "days_since_reply", "urgency", "trigger_reason"],
+            stage_name="signal_agent",
+        )
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["payload"]["confidence"], 0.6)
+        self.assertEqual(report["errors"], [])
 
 
 if __name__ == "__main__":

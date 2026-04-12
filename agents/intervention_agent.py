@@ -8,8 +8,10 @@ Uses deterministic strategy-only heuristics (no execution/tool calls) and prompt
 
 from __future__ import annotations
 
+import json
+
 from agents.contracts import make_result
-from agents.prompt_templates import render_prompt
+from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
 from context.models import DealContext, InterventionDecisionContext, SignalContext
 
 
@@ -55,13 +57,29 @@ def intervention_agent(
         f"Intervention decision '{result_label}' selected from urgency={signal_context.urgency}, "
         f"stalled={signal_context.stalled}, objections={deal_context.known_objections}."
     )
+    validation = validate_model_output_json(
+        model_output=json.dumps(
+            {
+                "result": result_label,
+                "reason": reason,
+                "reasoning": reasoning,
+                "confidence": confidence,
+            }
+        ),
+        required_json_fields=required_json_fields(InterventionDecisionContext),
+        stage_name="intervention_agent",
+    )
+    if not validation["ok"]:
+        raise PromptLintError(f"intervention_agent output failed validation: {validation['errors']}")
+    payload = validation["payload"]
+    assert isinstance(payload, dict)
 
     result = make_result(
         InterventionDecisionContext(
-            result=result_label,
-            reason=reason,
-            reasoning=reasoning,
-            confidence=confidence,
+            result=str(payload["result"]),
+            reason=str(payload["reason"]),
+            reasoning=str(payload["reasoning"]),
+            confidence=float(payload["confidence"]),
         ),
         reasoning,
         confidence,

@@ -8,10 +8,11 @@ Implements typed agent logic that consumes context slices and produces determini
 
 from __future__ import annotations
 
+import json
 from uuid import uuid4
 
 from agents.contracts import make_result
-from agents.prompt_templates import render_prompt
+from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
 from approval.policy import (
     escalation_instructions,
     max_risk_tier_for_workflow_phase,
@@ -214,15 +215,34 @@ def execution_agent(
     email_receipt = next((item["receipt"] for item in step_results if item["channel"] == "email"), {})
     crm_receipt = next((item["receipt"] for item in step_results if item["channel"] == "crm"), {})
     sms_receipt = next((item["receipt"] for item in step_results if item["channel"] == "sms"), {})
+    validation = validate_model_output_json(
+        model_output=json.dumps(
+            {
+                "execution_id": str(uuid4()),
+                "status": status,
+                "email_result": email_receipt,
+                "crm_result": crm_receipt,
+                "tool_events": tool_events + [{"by_step": step_results, "channel_results": {"sms": sms_receipt}}],
+                "reasoning": reasoning,
+                "confidence": confidence,
+            }
+        ),
+        required_json_fields=required_json_fields(ExecutionContext),
+        stage_name="execution_agent",
+    )
+    if not validation["ok"]:
+        raise PromptLintError(f"execution_agent output failed validation: {validation['errors']}")
+    payload = validation["payload"]
+    assert isinstance(payload, dict)
     result = make_result(
         ExecutionContext(
-            execution_id=str(uuid4()),
-            status=status,
-            email_result=email_receipt,
-            crm_result=crm_receipt,
-            tool_events=tool_events + [{"by_step": step_results, "channel_results": {"sms": sms_receipt}}],
-            reasoning=reasoning,
-            confidence=confidence,
+            execution_id=str(payload["execution_id"]),
+            status=str(payload["status"]),
+            email_result=dict(payload["email_result"]),
+            crm_result=dict(payload["crm_result"]),
+            tool_events=list(payload["tool_events"]),
+            reasoning=str(payload["reasoning"]),
+            confidence=float(payload["confidence"]),
         ),
         reasoning,
         confidence,

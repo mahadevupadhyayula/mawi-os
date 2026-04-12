@@ -6,7 +6,7 @@ from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any, get_args, get_origin, get_type_hints
 
-from agents.prompt_templates import PROMPT_OUTPUT_MODELS, load_prompt, render_prompt
+from agents.prompt_templates import PROMPT_OUTPUT_MODELS, load_prompt, render_prompt, required_json_fields, validate_model_output_json
 from workflows.registry import WORKFLOW_REGISTRY
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -109,6 +109,26 @@ class TestPromptSimulationRegression(unittest.TestCase):
                 payload = samples[template_name]
                 self.assertIsInstance(payload, dict)
                 _assert_dataclass_shape(payload, output_model)
+                validation = validate_model_output_json(
+                    model_output=json.dumps(payload),
+                    required_json_fields=required_json_fields(output_model),
+                    stage_name=template_name.replace("_prompt.txt", ""),
+                )
+                self.assertTrue(validation["ok"])
+                self.assertEqual(validation["errors"], [])
+
+    def test_prompt_output_validation_emits_structured_errors_for_regression_audit(self) -> None:
+        invalid_payload = {"reasoning": "ok", "confidence": -0.2}
+        validation = validate_model_output_json(
+            model_output=json.dumps(invalid_payload),
+            required_json_fields=required_json_fields(PROMPT_OUTPUT_MODELS["signal_prompt.txt"]),
+            stage_name="signal_agent",
+        )
+        self.assertFalse(validation["ok"])
+        self.assertGreaterEqual(len(validation["errors"]), 2)
+        codes = {error["code"] for error in validation["errors"]}
+        self.assertIn("missing_required_fields", codes)
+        self.assertIn("invalid_confidence_range", codes)
 
     def test_missing_workflow_prompt_falls_back_to_common_profile(self) -> None:
         fallback_body = load_prompt("context_prompt.txt", "new_deal_outreach_workflow")

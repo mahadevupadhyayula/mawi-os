@@ -8,8 +8,10 @@ Implements typed agent logic that consumes context slices and produces determini
 
 from __future__ import annotations
 
+import json
+
 from agents.contracts import make_result
-from agents.prompt_templates import render_prompt
+from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
 from context.models import DealContext, SignalContext
 
 
@@ -34,15 +36,34 @@ def context_agent(
     )
     reasoning = "Built persona and objection context from deal snapshot and signal."
     confidence = 0.82 if signal_context.stalled else 0.7
+    validation = validate_model_output_json(
+        model_output=json.dumps(
+            {
+                "persona": raw_data.get("persona", "unknown"),
+                "deal_stage": raw_data.get("deal_stage", "unknown"),
+                "known_objections": list(raw_data.get("known_objections", [])),
+                "recent_timeline": [raw_data.get("last_touch_summary", "")],
+                "recommended_tone": "consultative" if signal_context.urgency != "low" else "neutral",
+                "reasoning": reasoning,
+                "confidence": confidence,
+            }
+        ),
+        required_json_fields=required_json_fields(DealContext),
+        stage_name="context_agent",
+    )
+    if not validation["ok"]:
+        raise PromptLintError(f"context_agent output failed validation: {validation['errors']}")
+    payload = validation["payload"]
+    assert isinstance(payload, dict)
     result = make_result(
         DealContext(
-            persona=raw_data.get("persona", "unknown"),
-            deal_stage=raw_data.get("deal_stage", "unknown"),
-            known_objections=list(raw_data.get("known_objections", [])),
-            recent_timeline=[raw_data.get("last_touch_summary", "")],
-            recommended_tone="consultative" if signal_context.urgency != "low" else "neutral",
-            reasoning=reasoning,
-            confidence=confidence,
+            persona=str(payload["persona"]),
+            deal_stage=str(payload["deal_stage"]),
+            known_objections=list(payload["known_objections"]),
+            recent_timeline=list(payload["recent_timeline"]),
+            recommended_tone=str(payload["recommended_tone"]),
+            reasoning=str(payload["reasoning"]),
+            confidence=float(payload["confidence"]),
         ),
         reasoning,
         confidence,
