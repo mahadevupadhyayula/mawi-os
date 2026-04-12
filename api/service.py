@@ -44,12 +44,22 @@ class WorkflowAPI:
         self.orchestrator = orchestrator or WorkflowOrchestrator()
         self._deal_envelopes: Dict[str, Any] = {}
 
-    def start_workflow(self, deal_id: str, workflow_name: str | None = None) -> dict:
+    def start_workflow(
+        self,
+        deal_id: str,
+        workflow_name: str | None = None,
+        *,
+        trigger_context: dict[str, Any] | None = None,
+    ) -> dict:
         if workflow_name is not None and not is_known_workflow(workflow_name):
             supported = ", ".join(get_registered_workflow_names())
             raise ValueError(f"Unknown workflow name: {workflow_name}. Supported workflows: {supported}")
 
-        envelope = self.orchestrator.run_workflow(deal_id, workflow_name=workflow_name)
+        envelope = self.orchestrator.run_workflow(
+            deal_id,
+            workflow_name=workflow_name,
+            trigger_context=trigger_context,
+        )
         self._deal_envelopes[deal_id] = envelope
         return asdict(envelope)
 

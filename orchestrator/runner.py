@@ -14,6 +14,7 @@ from dataclasses import asdict
 from typing import Callable, TypeVar
 
 from agents.action_agent import action_agent
+from agents.crm_agent import crm_agent
 from agents.context_agent import context_agent
 from agents.evaluator_agent import evaluator_agent
 from agents.execution_agent import execution_agent
@@ -146,8 +147,23 @@ class WorkflowOrchestrator:
         if run_id:
             self.workflow_repo.append_envelope_snapshot(run_id, envelope, source_agent=source_agent)
 
-    def run_workflow(self, deal_id: str, workflow_name: str | None = None) -> ContextEnvelope:
+    def _outcome_from_raw_data(self, raw_data: dict) -> ExecutionOutcome:
+        return ExecutionOutcome(
+            reply_received=bool(raw_data.get("reply_received", False)),
+            meeting_booked=bool(raw_data.get("meeting_booked", False)),
+            notes=str(raw_data.get("execution_notes", "")),
+        )
+
+    def run_workflow(
+        self,
+        deal_id: str,
+        workflow_name: str | None = None,
+        *,
+        trigger_context: dict | None = None,
+    ) -> ContextEnvelope:
         raw = fetch_deal_data(deal_id)
+        if trigger_context:
+            raw.update(trigger_context)
         envelope = ContextEnvelope(meta=MetaContext(deal_id=deal_id), raw_data=raw)
         self.workflow_repo.create_or_update_deal(deal_id, raw)
         workflow = get_workflow(workflow_name)
@@ -289,12 +305,57 @@ class WorkflowOrchestrator:
             )
             return False
 
+        if step == "crm_agent":
+            crm_action_plan = self._execute_with_step_audit(
+                workflow_id=workflow_id,
+                step=step,
+                fn=lambda: crm_agent(
+                    envelope.raw_data,
+                    envelope.deal_context,
+                    envelope.decision_context,
+                    workflow_id=workflow_id,
+                    run_id=run_id,
+                ),
+            )
+            if not crm_action_plan.steps:
+                raise ValueError("crm_agent returned an empty action plan")
+            first_step = sorted(crm_action_plan.steps, key=lambda item: item.order)[0]
+            action = ActionContext(
+                action_id=first_step.step_id,
+                type=first_step.action_type,
+                subject=first_step.subject,
+                preview=first_step.preview,
+                body_draft=first_step.body_draft,
+                status="approved",
+                reasoning=crm_action_plan.reasoning,
+                confidence=crm_action_plan.confidence,
+            )
+            crm_action_plan.status = "approved"
+            for plan_step in crm_action_plan.steps:
+                plan_step.status = "approved"
+            append_or_refine_section(envelope, agent_name="crm_agent", section_value=action)
+            envelope.action_plan = crm_action_plan
+            set_stage(envelope, "action_done")
+            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+            self.action_repo.upsert_action(run_id, deal_id, action)
+            self.action_repo.upsert_action_plan(run_id, deal_id, action.action_id, crm_action_plan)
+            self._snapshot(deal_id, envelope, source_agent="crm_agent")
+            outcome = self._outcome_from_raw_data(envelope.raw_data)
+            self.resume_after_approval(envelope, outcome, workflow_id=workflow_id)
+            return False
+
         if step in {"execution_agent", "evaluator_agent"}:
             return True
 
         raise ValueError(f"Unsupported workflow step: {step}")
 
-    def resume_after_approval(self, envelope: ContextEnvelope, outcome: ExecutionOutcome) -> ContextEnvelope:
+    def resume_after_approval(
+        self,
+        envelope: ContextEnvelope,
+        outcome: ExecutionOutcome,
+        *,
+        workflow_id: str = "deal_followup_workflow",
+    ) -> ContextEnvelope:
         action_ctx = envelope.action_context
         if action_ctx is None:
             raise ValueError("Missing action_context")
@@ -349,7 +410,7 @@ class WorkflowOrchestrator:
                     action_plan,
                     deal_id=envelope.meta.deal_id,
                     contact_name=envelope.raw_data.get("contact_name", "Prospect"),
-                    workflow_id="deal_followup_workflow",
+                    workflow_id=workflow_id,
                     execution_phase="human_review",
                     run_id=run_id,
                 ),
@@ -374,7 +435,7 @@ class WorkflowOrchestrator:
                 fn=lambda: evaluator_agent(
                     execution,
                     outcome,
-                    workflow_id="deal_followup_workflow",
+                    workflow_id=workflow_id,
                     run_id=run_id,
                 ),
             )

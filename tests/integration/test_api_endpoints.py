@@ -178,3 +178,23 @@ def test_get_run_summary_by_deal_id_and_run_id_and_not_found(api_client_and_serv
     missing = client.get("/api/runs/summary", params={"run_id": "missing-run"})
     assert missing.status_code == 404
     assert missing.json()["error"] == "run_summary_not_found"
+
+
+def test_start_crm_sync_workflow_via_alias_runs_to_evaluation(api_client_and_service, monkeypatch) -> None:
+    client, _ = api_client_and_service
+    payload = _seed_payload("deal-api-crm-001")
+    payload.update(
+        {
+            "trigger_event": "post_action_execution",
+            "execution_id": "exec-api-1",
+            "crm_sync_required": True,
+            "crm_pending_updates": ["execution_result"],
+        }
+    )
+    monkeypatch.setattr("orchestrator.runner.fetch_deal_data", lambda _deal_id: dict(payload))
+
+    response = client.post("/api/workflows/start?workflow=crm-sync", json={"deal_id": "deal-api-crm-001"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["meta"]["workflow_stage"] == "evaluation_done"
+    assert data["action_plan"]["steps"][0]["channel"] == "crm"

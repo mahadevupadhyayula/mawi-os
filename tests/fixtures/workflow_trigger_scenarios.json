@@ -10,6 +10,7 @@
     "expected": {
       "deal_followup_workflow": true,
       "new_deal_outreach_workflow": false,
+      "crm_sync_workflow": false,
       "deal_intervention_workflow": false
     }
   },
@@ -28,6 +29,7 @@
     "expected": {
       "deal_followup_workflow": false,
       "new_deal_outreach_workflow": true,
+      "crm_sync_workflow": false,
       "deal_intervention_workflow": false
     }
   },
@@ -43,7 +45,26 @@
     "expected": {
       "deal_followup_workflow": false,
       "new_deal_outreach_workflow": false,
+      "crm_sync_workflow": false,
       "deal_intervention_workflow": false
+    }
+  },
+  {
+    "scenario": "crm_sync_explicit_api_triggered",
+    "raw_data": {
+      "deal_id": "D-400",
+      "trigger_source": "api",
+      "trigger_event": "explicit",
+      "crm_sync_required": true,
+      "crm_pending_updates": [
+        "latest_outbound_summary"
+      ]
+    },
+    "expected": {
+      "deal_followup_workflow": false,
+      "new_deal_outreach_workflow": false,
+      "deal_intervention_workflow": false,
+      "crm_sync_workflow": true
     }
   }
 ]
