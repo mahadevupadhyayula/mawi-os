@@ -184,6 +184,49 @@ class DBClient:
                     FOREIGN KEY (deal_id) REFERENCES deals(deal_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS intervention_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    deal_id TEXT NOT NULL,
+                    intervention_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    details_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (run_id) REFERENCES workflow_runs(run_id),
+                    FOREIGN KEY (deal_id) REFERENCES deals(deal_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS crm_sync_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    deal_id TEXT NOT NULL,
+                    sync_status TEXT NOT NULL,
+                    request_json TEXT NOT NULL DEFAULT '{}',
+                    response_json TEXT NOT NULL DEFAULT '{}',
+                    error_message TEXT,
+                    synced_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (run_id) REFERENCES workflow_runs(run_id),
+                    FOREIGN KEY (deal_id) REFERENCES deals(deal_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS workflow_state (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    deal_id TEXT NOT NULL,
+                    workflow_name TEXT,
+                    stage TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    state_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(run_id, deal_id),
+                    FOREIGN KEY (run_id) REFERENCES workflow_runs(run_id),
+                    FOREIGN KEY (deal_id) REFERENCES deals(deal_id)
+                );
+
 
                 CREATE TABLE IF NOT EXISTS prompt_runs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
