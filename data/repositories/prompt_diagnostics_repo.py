@@ -281,6 +281,51 @@ class PromptDiagnosticsRepository:
                 """,
                 (limit,),
             ).fetchall()
+            agent_rows = conn.execute(
+                """
+                SELECT
+                    agent_id,
+                    COUNT(*) AS total_runs,
+                    SUM(CASE WHEN error_type = 'KeyError' THEN 1 ELSE 0 END) AS parse_failures,
+                    SUM(CASE WHEN error_type = 'PromptLintError' THEN 1 ELSE 0 END) AS lint_policy_violations,
+                    SUM(CASE WHEN outcome_label IS NOT NULL THEN 1 ELSE 0 END) AS outcome_samples,
+                    SUM(CASE WHEN outcome_label IN ('positive', 'positive_engagement') THEN 1 ELSE 0 END) AS positive_outcomes,
+                    COALESCE(AVG(CASE WHEN outcome_label IN ('positive', 'positive_engagement') THEN confidence END), 0) AS pos_confidence,
+                    COALESCE(AVG(CASE WHEN outcome_label IS NOT NULL AND outcome_label NOT IN ('positive', 'positive_engagement') THEN confidence END), 0) AS neg_confidence
+                FROM prompt_runs
+                GROUP BY agent_id
+                ORDER BY agent_id ASC
+                """
+            ).fetchall()
+            execution_policy_violations = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS c FROM action_steps WHERE last_error = 'generated_output_policy_violation'"
+                ).fetchone()["c"]
+            )
+            approval_rejection_rows = conn.execute(
+                """
+                WITH latest_state AS (
+                    SELECT ws.run_id, ws.deal_id, ws.stage
+                    FROM workflow_state ws
+                    JOIN (
+                        SELECT run_id, deal_id, MAX(updated_at) AS latest_updated_at
+                        FROM workflow_state
+                        GROUP BY run_id, deal_id
+                    ) latest
+                    ON latest.run_id = ws.run_id
+                       AND latest.deal_id = ws.deal_id
+                       AND latest.latest_updated_at = ws.updated_at
+                )
+                SELECT
+                    COALESCE(ls.stage, 'unknown') AS stage,
+                    COUNT(*) AS total_actions,
+                    SUM(CASE WHEN a.status = 'rejected' OR a.rejected_at IS NOT NULL THEN 1 ELSE 0 END) AS rejected_actions
+                FROM actions a
+                LEFT JOIN latest_state ls ON ls.run_id = a.run_id AND ls.deal_id = a.deal_id
+                GROUP BY COALESCE(ls.stage, 'unknown')
+                ORDER BY stage ASC
+                """
+            ).fetchall()
 
         confidence_distribution = {str(row["band"]): int(row["count"]) for row in confidence_rows}
         outcome_correlation = [
@@ -320,6 +365,50 @@ class PromptDiagnosticsRepository:
             for row in variant_rows
         ]
         changelog = [dict(row) for row in changelog_rows]
+        baseline_outcome_samples = sum(int(row["outcome_samples"]) for row in agent_rows)
+        baseline_positive = sum(int(row["positive_outcomes"]) for row in agent_rows)
+        baseline_positive_rate = (baseline_positive / baseline_outcome_samples) if baseline_outcome_samples else 0.0
+        agent_metrics: list[dict[str, Any]] = []
+        for row in agent_rows:
+            total_runs = int(row["total_runs"])
+            parse_failures_for_agent = int(row["parse_failures"])
+            lint_policy_violations = int(row["lint_policy_violations"])
+            outcome_samples = int(row["outcome_samples"])
+            positive_outcomes = int(row["positive_outcomes"])
+            policy_violations = lint_policy_violations
+            if str(row["agent_id"]) == "execution_agent":
+                policy_violations += execution_policy_violations
+            outcome_rate = (positive_outcomes / outcome_samples) if outcome_samples else 0.0
+            agent_metrics.append(
+                {
+                    "agent_id": str(row["agent_id"]),
+                    "total_runs": total_runs,
+                    "parse_failure_rate": (parse_failures_for_agent / total_runs) if total_runs else 0.0,
+                    "policy_violation_rate": (policy_violations / total_runs) if total_runs else 0.0,
+                    "policy_violations": policy_violations,
+                    "approval_rejection_rate_by_stage": [
+                        {
+                            "stage": str(stage_row["stage"]),
+                            "total_actions": int(stage_row["total_actions"]),
+                            "rejected_actions": int(stage_row["rejected_actions"]),
+                            "rejection_rate": (
+                                int(stage_row["rejected_actions"]) / int(stage_row["total_actions"])
+                                if int(stage_row["total_actions"])
+                                else 0.0
+                            ),
+                        }
+                        for stage_row in approval_rejection_rows
+                    ],
+                    "downstream_outcome_lift_correlation": {
+                        "outcome_samples": outcome_samples,
+                        "positive_outcome_rate": outcome_rate,
+                        "baseline_positive_outcome_rate": baseline_positive_rate,
+                        "lift": outcome_rate - baseline_positive_rate,
+                        "confidence_delta": float(row["pos_confidence"]) - float(row["neg_confidence"]),
+                    },
+                }
+            )
+
         return {
             "summary": {
                 "total_prompt_runs": total,
@@ -334,6 +423,7 @@ class PromptDiagnosticsRepository:
                 "max_latency_ms": int(latency["max_ms"]),
                 "confidence_distribution": confidence_distribution,
                 "outcome_correlation": outcome_correlation,
+                "agent_metrics": agent_metrics,
             },
             "experiments": {
                 "rollouts": rollout_state,

@@ -34,6 +34,8 @@ class TestPromptExperimentRollout(unittest.TestCase):
         self.assertIn("experiments", report)
         self.assertIn("variant_metrics", report["experiments"])
         self.assertGreaterEqual(len(report["experiments"]["variant_metrics"]), 1)
+        self.assertIn("performance", report)
+        self.assertIn("agent_metrics", report["performance"])
 
     def test_degradation_triggers_auto_rollback(self) -> None:
         workflow_id = "deal_followup_workflow"
@@ -154,6 +156,105 @@ class TestPromptExperimentRollout(unittest.TestCase):
         report = self.repo.diagnostics_report(limit=20)
         rollouts = {row["workflow_id"]: row for row in report["experiments"]["rollouts"]}
         self.assertEqual(rollouts[workflow_id]["rollout_phase"], "full")
+
+    def test_report_includes_new_per_agent_metrics(self) -> None:
+        workflow_id = "deal_followup_workflow"
+        now = "2026-01-01T00:00:00+00:00"
+        with self.repo.db.tx() as conn:
+            conn.execute(
+                """
+                INSERT INTO prompt_runs (
+                    run_id, workflow_id, agent_id, prompt_name,
+                    prompt_profile_id, prompt_profile_version, prompt_schema_version,
+                    latency_ms, status, error_type, fallback_used, confidence, outcome_label, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "run-agent-metrics-1",
+                    workflow_id,
+                    "execution_agent",
+                    "execution_prompt.txt",
+                    workflow_id,
+                    "v1",
+                    "v1",
+                    12,
+                    "error",
+                    "KeyError",
+                    0,
+                    0.4,
+                    "negative",
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO prompt_runs (
+                    run_id, workflow_id, agent_id, prompt_name,
+                    prompt_profile_id, prompt_profile_version, prompt_schema_version,
+                    latency_ms, status, error_type, fallback_used, confidence, outcome_label, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "run-agent-metrics-2",
+                    workflow_id,
+                    "execution_agent",
+                    "execution_prompt.txt",
+                    workflow_id,
+                    "v1",
+                    "v1",
+                    10,
+                    "success",
+                    None,
+                    0,
+                    0.9,
+                    "positive",
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO actions (
+                    action_id, run_id, deal_id, action_type, confidence, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("action-agent-metrics", "run-agent-metrics-1", "deal-1", "email", 0.6, "rejected", now, now),
+            )
+            conn.execute(
+                """
+                INSERT INTO action_steps (
+                    step_id, action_id, run_id, deal_id, step_order, channel, action_type, status, last_error, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "step-agent-metrics",
+                    "action-agent-metrics",
+                    "run-agent-metrics-1",
+                    "deal-1",
+                    1,
+                    "email",
+                    "email.send",
+                    "failed",
+                    "generated_output_policy_violation",
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO workflow_state (
+                    run_id, deal_id, stage, status, state_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, '{}', ?, ?)
+                """,
+                ("run-agent-metrics-1", "deal-1", "waiting_approval", "active", now, now),
+            )
+
+        report = self.repo.diagnostics_report(limit=20)
+        agents = {row["agent_id"]: row for row in report["performance"]["agent_metrics"]}
+        execution_metrics = agents["execution_agent"]
+        self.assertGreater(execution_metrics["parse_failure_rate"], 0)
+        self.assertGreater(execution_metrics["policy_violation_rate"], 0)
+        self.assertIn("approval_rejection_rate_by_stage", execution_metrics)
+        self.assertIn("downstream_outcome_lift_correlation", execution_metrics)
 
 
 if __name__ == "__main__":
