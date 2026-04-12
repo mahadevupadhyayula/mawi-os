@@ -89,11 +89,5 @@
     "outcome_label": "positive_engagement",
     "insight": "Prospect requested a follow-up demo.",
     "recommended_adjustment": "Repeat concise CTA format in next sequence."
-  },
-  "intervention_prompt.txt": {
-    "reasoning": "Intervention decision selected from urgency and risk signals.",
-    "confidence": 0.86,
-    "result": "intervene",
-    "reason": "High urgency or risk objection detected; intervention strategy should be prioritized."
   }
 }

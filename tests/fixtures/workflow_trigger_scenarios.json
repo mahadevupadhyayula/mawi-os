@@ -66,5 +66,22 @@
       "deal_intervention_workflow": false,
       "crm_sync_workflow": true
     }
+  },
+  {
+    "scenario": "deal_intervention_risk_triggered",
+    "raw_data": {
+      "deal_id": "D-500",
+      "risk_tier": "high",
+      "risk_score": 72,
+      "days_since_reply": 1,
+      "outbound_count": 1,
+      "has_prior_outbound": true
+    },
+    "expected": {
+      "deal_followup_workflow": false,
+      "new_deal_outreach_workflow": false,
+      "deal_intervention_workflow": true,
+      "crm_sync_workflow": false
+    }
   }
 ]
