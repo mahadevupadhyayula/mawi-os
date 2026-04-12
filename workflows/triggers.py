@@ -70,3 +70,46 @@ def should_trigger_deal_intervention(raw_data: dict) -> bool:
     inferred_tier = _risk_tier_from_score(risk_score)
     return inferred_tier in {"high", "critical"}
 
+
+
+CRM_SYNC_POST_ACTION_EVENTS = {
+    "post_action_execution",
+    "action_executed",
+}
+
+
+def _crm_sync_required(raw_data: dict) -> bool:
+    explicit = raw_data.get("crm_sync_required")
+    if explicit is not None:
+        return bool(explicit)
+
+    crm_state = raw_data.get("crm_state")
+    if isinstance(crm_state, dict):
+        if crm_state.get("sync_required") is not None:
+            return bool(crm_state.get("sync_required"))
+        pending = crm_state.get("pending_updates")
+        if isinstance(pending, list) and len(pending) > 0:
+            return True
+
+    pending_updates = raw_data.get("crm_pending_updates")
+    if isinstance(pending_updates, list) and len(pending_updates) > 0:
+        return True
+
+    return False
+
+
+def should_trigger_crm_sync(raw_data: dict) -> bool:
+    trigger_source = str(raw_data.get("trigger_source", "")).strip().lower()
+    trigger_event = str(raw_data.get("trigger_event", "")).strip().lower()
+
+    explicit_api_trigger = trigger_source == "api" and trigger_event in {"explicit", "manual", "crm_sync"}
+    post_action_event_trigger = trigger_event in CRM_SYNC_POST_ACTION_EVENTS or bool(raw_data.get("post_action_execution"))
+
+    if explicit_api_trigger:
+        return _crm_sync_required(raw_data) or bool(raw_data.get("force_crm_sync", True))
+
+    if post_action_event_trigger:
+        has_execution_reference = bool(raw_data.get("action_id") or raw_data.get("execution_id"))
+        return has_execution_reference or _crm_sync_required(raw_data)
+
+    return False

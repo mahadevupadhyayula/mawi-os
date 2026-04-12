@@ -19,6 +19,7 @@ ALLOWED_SECTION_WRITES = {
     "context_agent": "deal_context",
     "strategist_agent": "decision_context",
     "action_agent": "action_context",
+    "crm_agent": "action_context",
     "execution_agent": "execution_context",
     "evaluator_agent": "outcome_context",
 }

@@ -27,6 +27,7 @@ router = APIRouter(prefix="/api", tags=["workflow"])
 
 _WORKFLOW_ALIASES = {
     "deal-followup": "deal_followup_workflow",
+    "crm-sync": "crm_sync_workflow",
 }
 
 _service = WorkflowAPI()
@@ -68,7 +69,11 @@ def start_workflow(
 ) -> dict[str, Any] | JSONResponse:
     try:
         selected_workflow = _resolve_workflow_name(workflow)
-        return service.start_workflow(payload.deal_id, workflow_name=selected_workflow)
+        return service.start_workflow(
+            payload.deal_id,
+            workflow_name=selected_workflow,
+            trigger_context={"trigger_source": "api", "trigger_event": "explicit"},
+        )
     except ValueError as exc:
         return _error_response(status.HTTP_400_BAD_REQUEST, "unknown_workflow", str(exc))
 

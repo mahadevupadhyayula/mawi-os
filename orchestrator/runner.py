@@ -14,6 +14,7 @@ from dataclasses import asdict
 from typing import Callable, TypeVar
 
 from agents.action_agent import action_agent
+from agents.crm_agent import crm_agent
 from agents.context_agent import context_agent
 from agents.evaluator_agent import evaluator_agent
 from agents.execution_agent import execution_agent
@@ -146,8 +147,23 @@ class WorkflowOrchestrator:
         if run_id:
             self.workflow_repo.append_envelope_snapshot(run_id, envelope, source_agent=source_agent)
 
-    def run_workflow(self, deal_id: str, workflow_name: str | None = None) -> ContextEnvelope:
+    def _outcome_from_raw_data(self, raw_data: dict) -> ExecutionOutcome:
+        return ExecutionOutcome(
+            reply_received=bool(raw_data.get("reply_received", False)),
+            meeting_booked=bool(raw_data.get("meeting_booked", False)),
+            notes=str(raw_data.get("execution_notes", "")),
+        )
+
+    def run_workflow(
+        self,
+        deal_id: str,
+        workflow_name: str | None = None,
+        *,
+        trigger_context: dict | None = None,
+    ) -> ContextEnvelope:
         raw = fetch_deal_data(deal_id)
+        if trigger_context:
+            raw.update(trigger_context)
         envelope = ContextEnvelope(meta=MetaContext(deal_id=deal_id), raw_data=raw)
         self.workflow_repo.create_or_update_deal(deal_id, raw)
         workflow = get_workflow(workflow_name)
@@ -289,7 +305,96 @@ class WorkflowOrchestrator:
             )
             return False
 
-        if step in {"execution_agent", "evaluator_agent"}:
+        if step == "crm_agent":
+            crm_action_plan = self._execute_with_step_audit(
+                workflow_id=workflow_id,
+                step=step,
+                fn=lambda: crm_agent(
+                    envelope.raw_data,
+                    envelope.deal_context,
+                    envelope.decision_context,
+                    workflow_id=workflow_id,
+                    run_id=run_id,
+                ),
+            )
+            if not crm_action_plan.steps:
+                raise ValueError("crm_agent returned an empty action plan")
+            first_step = sorted(crm_action_plan.steps, key=lambda item: item.order)[0]
+            action = ActionContext(
+                action_id=first_step.step_id,
+                type=first_step.action_type,
+                subject=first_step.subject,
+                preview=first_step.preview,
+                body_draft=first_step.body_draft,
+                status="approved",
+                reasoning=crm_action_plan.reasoning,
+                confidence=crm_action_plan.confidence,
+            )
+            crm_action_plan.status = "approved"
+            for plan_step in crm_action_plan.steps:
+                plan_step.status = "approved"
+            append_or_refine_section(envelope, agent_name="crm_agent", section_value=action)
+            envelope.action_plan = crm_action_plan
+            set_stage(envelope, "action_done")
+            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+            self.action_repo.upsert_action(run_id, deal_id, action)
+            self.action_repo.upsert_action_plan(run_id, deal_id, action.action_id, crm_action_plan)
+            self._snapshot(deal_id, envelope, source_agent="crm_agent")
+            return True
+
+        if step == "execution_agent":
+            action_ctx = envelope.action_context
+            action_plan = envelope.action_plan
+            if action_ctx is None or action_plan is None:
+                raise ValueError("Missing approved action plan for execution stage")
+            execution = self._execute_with_step_audit(
+                workflow_id=workflow_id,
+                step=step,
+                fn=lambda: execution_agent(
+                    action_plan,
+                    deal_id=deal_id,
+                    contact_name=envelope.raw_data.get("contact_name", "Prospect"),
+                    workflow_id=workflow_id,
+                    execution_phase="autonomous",
+                    run_id=run_id,
+                ),
+            )
+            append_or_refine_section(envelope, agent_name="execution_agent", section_value=execution)
+            set_stage(envelope, "execution_done")
+            self.outcome_repo.record_execution(run_id, deal_id, action_ctx.action_id, execution)
+            self.action_repo.upsert_action_plan(run_id, deal_id, action_ctx.action_id, action_plan)
+            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_RUNNING)
+            self._snapshot(deal_id, envelope, source_agent="execution_agent")
+            return True
+
+        if step == "evaluator_agent":
+            action_ctx = envelope.action_context
+            execution_ctx = envelope.execution_context
+            if action_ctx is None or execution_ctx is None:
+                raise ValueError("Missing execution context for evaluator stage")
+            outcome = self._outcome_from_raw_data(envelope.raw_data)
+            outcome_ctx = self._execute_with_step_audit(
+                workflow_id=workflow_id,
+                step=step,
+                fn=lambda: evaluator_agent(
+                    execution_ctx,
+                    outcome,
+                    workflow_id=workflow_id,
+                    run_id=run_id,
+                ),
+            )
+            append_or_refine_section(envelope, agent_name="evaluator_agent", section_value=outcome_ctx)
+            set_stage(envelope, "evaluation_done")
+            self.outcome_repo.record_outcome(run_id, deal_id, action_ctx.action_id, outcome_ctx)
+            attach_prompt_outcome(run_id=run_id, outcome_label=outcome_ctx.outcome_label)
+            attach_prompt_outcome_metrics(
+                run_id=run_id,
+                reply_received=outcome.reply_received,
+                meeting_booked=outcome.meeting_booked,
+                execution_success=execution_ctx.status == "executed",
+            )
+            self._update_run_status(run_id, envelope.meta.workflow_stage, RUN_STATUS_COMPLETED, complete=True)
+            self._snapshot(deal_id, envelope, source_agent="evaluator_agent")
             return True
 
         raise ValueError(f"Unsupported workflow step: {step}")

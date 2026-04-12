@@ -13,6 +13,10 @@ from typing import Any, Callable
 
 from agents.prompt_blocks import block_pack_for_workflow_type, merge_prompt_blocks
 
+from workflows.crm_sync_workflow import (
+    WORKFLOW_NAME as CRM_SYNC_WORKFLOW_NAME,
+    WORKFLOW_STEPS as CRM_SYNC_WORKFLOW_STEPS,
+)
 from workflows.deal_followup_workflow import WORKFLOW_NAME, WORKFLOW_STEPS
 from workflows.deal_intervention_workflow import (
     WORKFLOW_NAME as DEAL_INTERVENTION_WORKFLOW_NAME,
@@ -23,6 +27,7 @@ from workflows.new_deal_outreach_workflow import (
     WORKFLOW_STEPS as NEW_DEAL_WORKFLOW_STEPS,
 )
 from workflows.triggers import (
+    should_trigger_crm_sync,
     should_trigger_deal_followup,
     should_trigger_deal_intervention,
     should_trigger_new_deal_outreach,
@@ -39,6 +44,21 @@ class WorkflowMetadata:
 
 DEFAULT_WORKFLOW_NAME = WORKFLOW_NAME
 WORKFLOW_REGISTRY: dict[str, WorkflowMetadata] = {
+
+    CRM_SYNC_WORKFLOW_NAME: WorkflowMetadata(
+        workflow_id=CRM_SYNC_WORKFLOW_NAME,
+        steps=CRM_SYNC_WORKFLOW_STEPS,
+        trigger=should_trigger_crm_sync,
+        config={
+            "release_version": "2026.04.1",
+            "max_risk_tier_by_phase": {
+                "default": "medium",
+                "autonomous": "medium",
+                "human_review": "medium",
+            },
+            "requires_explicit_or_post_action_event": True,
+        },
+    ),
     WORKFLOW_NAME: WorkflowMetadata(
         workflow_id=WORKFLOW_NAME,
         steps=WORKFLOW_STEPS,
