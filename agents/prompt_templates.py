@@ -107,7 +107,8 @@ def _validate_prompt_registry_manifest(manifest: Mapping[str, Any]) -> None:
         prompt_id = str(entry.get("prompt_id", ""))
         if not prompt_id:
             raise ValueError("Prompt registry entries must include prompt_id.")
-        if str(entry.get("status", "")) not in {"draft", "active", "deprecated"}:
+        status = str(entry.get("status", ""))
+        if status not in {"draft", "active", "deprecated"}:
             raise ValueError(f"Prompt registry entry '{prompt_id}' has invalid status.")
         if not str(entry.get("owner", "")):
             raise ValueError(f"Prompt registry entry '{prompt_id}' must include an owner.")
@@ -120,6 +121,8 @@ def _validate_prompt_registry_manifest(manifest: Mapping[str, Any]) -> None:
 
         workflow_id = str(entry.get("workflow_id", ""))
         release_version = str(entry.get("workflow_release_version", ""))
+        is_planned_workflow = bool(entry.get("planned_workflow", False))
+
         if workflow_id and is_known_workflow(workflow_id):
             expected_release = get_workflow_release_version(workflow_id)
             if release_version != expected_release:
@@ -127,6 +130,19 @@ def _validate_prompt_registry_manifest(manifest: Mapping[str, Any]) -> None:
                     f"Prompt registry entry '{prompt_id}' release mismatch: "
                     f"expected workflow release version '{expected_release}', got '{release_version}'."
                 )
+            continue
+
+        if workflow_id and not is_planned_workflow:
+            raise ValueError(
+                f"Prompt registry entry '{prompt_id}' references unknown workflow_id '{workflow_id}'. "
+                "Set planned_workflow=true only for planned registrations."
+            )
+
+        if is_planned_workflow and status != "draft":
+            raise ValueError(
+                f"Prompt registry entry '{prompt_id}' references planned workflow '{workflow_id}' "
+                f"and must use status 'draft', got '{status}'."
+            )
 
 
 def load_prompt_manifest() -> dict[str, Any]:

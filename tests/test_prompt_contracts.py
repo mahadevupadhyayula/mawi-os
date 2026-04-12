@@ -3,6 +3,7 @@ import unittest
 from agents.prompt_templates import (
     PROMPT_OUTPUT_MODELS,
     PromptLintError,
+    _validate_prompt_registry_manifest,
     generate_prompt_health_report,
     get_prompt_fallback_telemetry,
     load_prompt_manifest,
@@ -203,6 +204,66 @@ class TestPromptContracts(unittest.TestCase):
         self.assertIn(first_entry["status"], {"draft", "active", "deprecated"})
         self.assertTrue(first_entry["owner"])
         self.assertTrue(first_entry["changelog"])
+
+    def test_manifest_validation_rejects_unknown_workflow_without_planned_flag(self) -> None:
+        manifest = {
+            "prompt_registry_index": [
+                {
+                    "prompt_id": "future.signal_prompt",
+                    "workflow_id": "future_workflow",
+                    "version": "1.0.0",
+                    "owner": "prompt-governance@mawi",
+                    "status": "draft",
+                    "workflow_release_version": "2026.04.1",
+                    "changelog": [{"version": "1.0.0", "date": "2026-04-12", "summary": "Planned."}],
+                }
+            ]
+        }
+
+        with self.assertRaises(ValueError) as ctx:
+            _validate_prompt_registry_manifest(manifest)
+
+        self.assertIn("unknown workflow_id", str(ctx.exception))
+        self.assertIn("planned_workflow=true", str(ctx.exception))
+
+    def test_manifest_validation_allows_planned_unknown_workflow_in_draft_only(self) -> None:
+        manifest = {
+            "prompt_registry_index": [
+                {
+                    "prompt_id": "future.signal_prompt",
+                    "workflow_id": "future_workflow",
+                    "planned_workflow": True,
+                    "version": "1.0.0",
+                    "owner": "prompt-governance@mawi",
+                    "status": "draft",
+                    "workflow_release_version": "2026.04.1",
+                    "changelog": [{"version": "1.0.0", "date": "2026-04-12", "summary": "Planned."}],
+                }
+            ]
+        }
+
+        _validate_prompt_registry_manifest(manifest)
+
+    def test_manifest_validation_rejects_active_status_for_planned_unknown_workflow(self) -> None:
+        manifest = {
+            "prompt_registry_index": [
+                {
+                    "prompt_id": "future.signal_prompt",
+                    "workflow_id": "future_workflow",
+                    "planned_workflow": True,
+                    "version": "1.0.0",
+                    "owner": "prompt-governance@mawi",
+                    "status": "active",
+                    "workflow_release_version": "2026.04.1",
+                    "changelog": [{"version": "1.0.0", "date": "2026-04-12", "summary": "Planned."}],
+                }
+            ]
+        }
+
+        with self.assertRaises(ValueError) as ctx:
+            _validate_prompt_registry_manifest(manifest)
+
+        self.assertIn("must use status 'draft'", str(ctx.exception))
 
     def test_validate_model_output_json_returns_structured_error_for_missing_fields(self) -> None:
         report = validate_model_output_json(
