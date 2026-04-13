@@ -30,3 +30,10 @@ This file tracks workflow implementation status based on the repository's implem
   - `deal_intervention_workflow`: runs on `deal_stalled`/`no_reply`, explicit `risk_tier` high/critical, or inferred high-risk score thresholds.
   - `crm_sync_workflow`: runs for explicit API CRM sync requests or post-action execution events with execution references/sync-required payloads.
 - **Approval behavior:** action plans are auto-approved if confidence meets threshold; otherwise they are queued for human approval (`waiting_approval`) before execution.
+
+## Demo Runtime Modes (Safety Notes)
+
+- **Mode A — deterministic (safe/offline):** set `MAWI_LLM_ENABLED=false` (default). No external API key is required, and workflow behavior remains fully auditable.
+- **Mode B — live LLM:** set `MAWI_LLM_ENABLED=true` and provide `OPENAI_API_KEY` to enable provider-backed JSON generation for agent stages.
+- **Fallback guarantee:** on provider timeout, invalid JSON, missing required fields, or missing key/provider errors, agent stages fall back to deterministic payloads so orchestration contracts and approval gating stay intact.
+- **Invariant controls:** orchestration sequencing, policy/approval checks, and execution tool boundaries are unchanged between modes.
