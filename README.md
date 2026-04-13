@@ -26,6 +26,15 @@ This is enabled through:
 - tool-driven execution
 - evaluation and memory feedback loops
 
+### Architectural Invariants (Always On)
+
+The following principles remain explicit and non-negotiable across deterministic and LLM-backed runs:
+
+- **orchestration contracts remain stable** across workflows and rollout stages
+- **policy/approval gate is always enforced** (no bypass in demo modes)
+- **execution tools stay unchanged and auditable** through existing adapters and audit logs
+- **fallback-to-deterministic behavior preserves runtime safety** when LLM output is unavailable or invalid
+
 ---
 
 ## 🧩 System Architecture
@@ -360,11 +369,84 @@ For detailed roadmap items, see [`BACKLOG.md`](./BACKLOG.md).
 
 ## 🛠️ Getting Started
 
+### Environment Setup (Deterministic + LLM-backed)
+
+MAWI runs safely by default in deterministic mode with no external API dependency.
+
+```bash
+# Optional but recommended: create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate
+```
+
+#### Required for live LLM mode
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+#### Optional `MAWI_LLM_*` runtime controls
+
+```bash
+# Keep deterministic mode (safe/offline default)
+export MAWI_LLM_ENABLED=false
+
+# Enable live LLM mode
+# export MAWI_LLM_ENABLED=true
+
+# Provider/model/runtime controls
+export MAWI_LLM_PROVIDER="openai"
+export MAWI_OPENAI_MODEL="gpt-4.1-mini"
+export MAWI_LLM_MODEL="gpt-4.1-mini"        # fallback alias if MAWI_OPENAI_MODEL unset
+export MAWI_LLM_TIMEOUT_SEC="30"
+export MAWI_LLM_MAX_RETRIES="2"
+export MAWI_LLM_RETRY_BACKOFF_SEC="0.6"
+export MAWI_LLM_TEMPERATURE="0.0"
+export MAWI_LLM_BASE_URL="https://api.openai.com"
+```
+
+### Demo modes
+
+#### Mode A — deterministic (safe/offline)
+
+- `MAWI_LLM_ENABLED=false` (default) keeps agent outputs deterministic.
+- No `OPENAI_API_KEY` is required.
+- Best for local development, regression tests, and auditable baseline behavior.
+- Orchestration contracts, approval gating, and execution-tool audit traces remain identical to live mode.
+
+#### Mode B — live LLM (investor/customer demos)
+
+- Set `MAWI_LLM_ENABLED=true` and provide `OPENAI_API_KEY`.
+- Uses OpenAI-backed JSON generation while preserving the same orchestrator + policy controls.
+- If the model call fails validation or runtime checks, MAWI automatically falls back to deterministic payloads.
+- Recommended for narrative-rich demos where you want dynamic phrasing but stable workflow safety.
+
 ```bash
 python main.py
 ```
 
 This runs the local demo workflow end-to-end, including approval/resume behavior.
+
+### Troubleshooting LLM-backed runs
+
+- **Invalid JSON from provider**
+  - Symptom: LLM result cannot be parsed as JSON or misses required fields.
+  - Behavior: MAWI logs validation/provider fallback and uses deterministic output for that stage.
+  - Action: keep `MAWI_LLM_TEMPERATURE=0.0`, verify prompt contract fields, and keep retries enabled.
+
+- **Timeouts**
+  - Symptom: provider calls exceed `MAWI_LLM_TIMEOUT_SEC`.
+  - Behavior: MAWI retries up to `MAWI_LLM_MAX_RETRIES`, then falls back to deterministic output.
+  - Action: increase timeout, reduce model latency risk, or keep deterministic mode for offline demos.
+
+- **Missing API key**
+  - Symptom: `OPENAI_API_KEY` is unset while `MAWI_LLM_ENABLED=true`.
+  - Behavior: provider error is returned and agent stage falls back to deterministic output.
+  - Action: export a valid key or set `MAWI_LLM_ENABLED=false`.
+
+- **Fallback behavior (expected safety path)**
+  - MAWI preserves execution continuity by using deterministic stage payloads when LLM output is invalid/unavailable.
+  - Approval/policy gates and tool execution boundaries remain enforced and auditable during fallback.
 
 ### Web API Adapter (FastAPI)
 
