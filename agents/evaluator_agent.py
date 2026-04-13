@@ -8,12 +8,17 @@ Implements typed agent logic that consumes context slices and produces determini
 
 from __future__ import annotations
 
-from agents.contracts import ExecutionOutcome, make_result
 import json
+import logging
 
+from agents.contracts import ExecutionOutcome, make_result
+from agents.llm_client import LLMRequest, generate_json
 from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
+from agents.runtime_config import load_runtime_llm_config
 from context.models import ExecutionContext, OutcomeContext
 from evaluation.outcome_analyzer import classify_outcome_detailed
+
+LOGGER = logging.getLogger(__name__)
 
 
 def evaluator_agent(
@@ -23,7 +28,7 @@ def evaluator_agent(
     workflow_id: str = "deal_followup_workflow",
     run_id: str | None = None,
 ) -> OutcomeContext:
-    _ = render_prompt(
+    prompt_text = render_prompt(
         "evaluator_prompt.txt",
         prompt_contract={
             "workflow_goal": "Evaluate execution outcomes and produce reusable learning signals.",
@@ -58,17 +63,42 @@ def evaluator_agent(
         confidence = 0.65
 
     reasoning = "Compared execution result with observed outcome and generated learning signal."
+    deterministic_payload = {
+        "outcome_label": label,
+        "insight": insight,
+        "recommended_adjustment": adjustment,
+        "reasoning": reasoning,
+        "confidence": confidence,
+    }
+    required_fields = required_json_fields(OutcomeContext)
+    model_output = json.dumps(deterministic_payload)
+    runtime_config = load_runtime_llm_config()
+    if runtime_config.enabled:
+        llm_result = generate_json(
+            LLMRequest(
+                prompt=prompt_text,
+                required_fields=required_fields,
+                model=runtime_config.openai_model,
+                timeout_sec=runtime_config.timeout_sec,
+            )
+        )
+        if llm_result.error:
+            LOGGER.warning("evaluator_agent llm fallback: %s", llm_result.error)
+        elif llm_result.payload is None:
+            LOGGER.warning("evaluator_agent llm fallback: empty payload")
+        else:
+            llm_validation = validate_model_output_json(
+                model_output=json.dumps(llm_result.payload),
+                required_json_fields=required_fields,
+                stage_name="evaluator_agent",
+            )
+            if llm_validation["ok"]:
+                model_output = json.dumps(llm_result.payload)
+            else:
+                LOGGER.warning("evaluator_agent llm validation fallback: %s", llm_validation["errors"])
     validation = validate_model_output_json(
-        model_output=json.dumps(
-            {
-                "outcome_label": label,
-                "insight": insight,
-                "recommended_adjustment": adjustment,
-                "reasoning": reasoning,
-                "confidence": confidence,
-            }
-        ),
-        required_json_fields=required_json_fields(OutcomeContext),
+        model_output=model_output,
+        required_json_fields=required_fields,
         stage_name="evaluator_agent",
     )
     if not validation["ok"]:
