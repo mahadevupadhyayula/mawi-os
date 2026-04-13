@@ -62,7 +62,11 @@ def generate_json(request: LLMRequest) -> LLMResult:
             error="provider_error",
         )
 
-    model = os.getenv("MAWI_LLM_MODEL", request.model).strip() or request.model
+    model = (
+        os.getenv("MAWI_OPENAI_MODEL", "").strip()
+        or os.getenv("MAWI_LLM_MODEL", "").strip()
+        or request.model
+    )
     temperature = _float_env("MAWI_LLM_TEMPERATURE", request.temperature)
     timeout_sec = _float_env("MAWI_LLM_TIMEOUT_SEC", request.timeout_sec)
     max_retries = _int_env("MAWI_LLM_MAX_RETRIES", 2)

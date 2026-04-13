@@ -9,12 +9,16 @@ Builds a strict CRM sync action plan from normalized CRM state and deal context 
 from __future__ import annotations
 
 import json
+import logging
 from uuid import uuid4
 
 from agents.contracts import make_result
+from agents.llm_client import LLMRequest, generate_json
 from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
+from agents.runtime_config import load_runtime_llm_config
 from context.models import ActionPlanContext, ActionStep, DealContext, DecisionContext
 
+LOGGER = logging.getLogger(__name__)
 
 def _normalize_crm_state(raw_data: dict) -> dict:
     crm_state = raw_data.get("crm_state")
@@ -44,7 +48,7 @@ def crm_agent(
     workflow_id: str = "crm_sync_workflow",
     run_id: str | None = None,
 ) -> ActionPlanContext:
-    _ = render_prompt(
+    prompt_text = render_prompt(
         "action_prompt.txt",
         prompt_contract={
             "workflow_goal": "Generate an ordered CRM synchronization plan from normalized CRM state.",
@@ -83,17 +87,42 @@ def crm_agent(
         ),
         status="approved",
     )
+    deterministic_payload = {
+        "plan_id": str(uuid4()),
+        "steps": [step.__dict__],
+        "status": "approved",
+        "reasoning": reasoning,
+        "confidence": confidence,
+    }
+    required_fields = required_json_fields(ActionPlanContext)
+    model_output = json.dumps(deterministic_payload)
+    runtime_config = load_runtime_llm_config()
+    if runtime_config.enabled:
+        llm_result = generate_json(
+            LLMRequest(
+                prompt=prompt_text,
+                required_fields=required_fields,
+                model=runtime_config.openai_model,
+                timeout_sec=runtime_config.timeout_sec,
+            )
+        )
+        if llm_result.error:
+            LOGGER.warning("crm_agent llm fallback: %s", llm_result.error)
+        elif llm_result.payload is None:
+            LOGGER.warning("crm_agent llm fallback: empty payload")
+        else:
+            llm_validation = validate_model_output_json(
+                model_output=json.dumps(llm_result.payload),
+                required_json_fields=required_fields,
+                stage_name="crm_agent",
+            )
+            if llm_validation["ok"]:
+                model_output = json.dumps(llm_result.payload)
+            else:
+                LOGGER.warning("crm_agent llm validation fallback: %s", llm_validation["errors"])
     validation = validate_model_output_json(
-        model_output=json.dumps(
-            {
-                "plan_id": str(uuid4()),
-                "steps": [step.__dict__],
-                "status": "approved",
-                "reasoning": reasoning,
-                "confidence": confidence,
-            }
-        ),
-        required_json_fields=required_json_fields(ActionPlanContext),
+        model_output=model_output,
+        required_json_fields=required_fields,
         stage_name="crm_agent",
     )
     if not validation["ok"]:

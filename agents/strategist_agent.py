@@ -9,10 +9,15 @@ Renders strategist prompt templates, applies deterministic strategy selection lo
 from __future__ import annotations
 
 import json
+import logging
 
 from agents.contracts import make_result
+from agents.llm_client import LLMRequest, generate_json
 from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
+from agents.runtime_config import load_runtime_llm_config
 from context.models import DealContext, DecisionContext, SignalContext
+
+LOGGER = logging.getLogger(__name__)
 
 
 def strategist_agent(
@@ -23,7 +28,7 @@ def strategist_agent(
     workflow_id: str = "deal_followup_workflow",
     run_id: str | None = None,
 ) -> DecisionContext:
-    _ = render_prompt(
+    prompt_text = render_prompt(
         "strategist_prompt.txt",
         prompt_contract={
             "workflow_goal": "Select a next-best strategy that restarts stalled conversations.",
@@ -61,21 +66,47 @@ def strategist_agent(
             f"and apply confidence impact +{memory_confidence_impact:.3f}."
         )
         reasoning = f"Selected {strategy_type} based on objections and urgency={signal_context.urgency}. {memory_rationale}"
+    deterministic_payload = {
+        "strategy_id": f"strat-{strategy_type}",
+        "strategy_type": strategy_type,
+        "message_goal": "restart_conversation",
+        "fallback_strategy": "social_proof",
+        "memory_evidence_used": evidence,
+        "memory_confidence_impact": memory_confidence_impact,
+        "memory_rationale": memory_rationale,
+        "reasoning": reasoning,
+        "confidence": confidence,
+    }
+    required_fields = required_json_fields(DecisionContext)
+    model_output = json.dumps(deterministic_payload)
+    runtime_config = load_runtime_llm_config()
+    if runtime_config.enabled:
+        llm_result = generate_json(
+            LLMRequest(
+                prompt=prompt_text,
+                required_fields=required_fields,
+                model=runtime_config.openai_model,
+                timeout_sec=runtime_config.timeout_sec,
+            )
+        )
+        if llm_result.error:
+            LOGGER.warning("strategist_agent llm fallback: %s", llm_result.error)
+        elif llm_result.payload is None:
+            LOGGER.warning("strategist_agent llm fallback: empty payload")
+        else:
+            llm_validation = validate_model_output_json(
+                model_output=json.dumps(llm_result.payload),
+                required_json_fields=required_fields,
+                stage_name="strategist_agent",
+            )
+            if llm_validation["ok"]:
+                model_output = json.dumps(llm_result.payload)
+            else:
+                LOGGER.warning("strategist_agent llm validation fallback: %s", llm_validation["errors"])
+
     validation = validate_model_output_json(
-        model_output=json.dumps(
-            {
-                "strategy_id": f"strat-{strategy_type}",
-                "strategy_type": strategy_type,
-                "message_goal": "restart_conversation",
-                "fallback_strategy": "social_proof",
-                "memory_evidence_used": evidence,
-                "memory_confidence_impact": memory_confidence_impact,
-                "memory_rationale": memory_rationale,
-                "reasoning": reasoning,
-                "confidence": confidence,
-            }
-        ),
-        required_json_fields=required_json_fields(DecisionContext),
+        model_output=model_output,
+        required_json_fields=required_fields,
         stage_name="strategist_agent",
     )
     if not validation["ok"]:

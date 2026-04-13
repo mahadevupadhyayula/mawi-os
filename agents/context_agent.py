@@ -9,10 +9,15 @@ Implements typed agent logic that consumes context slices and produces determini
 from __future__ import annotations
 
 import json
+import logging
 
 from agents.contracts import make_result
+from agents.llm_client import LLMRequest, generate_json
 from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
+from agents.runtime_config import load_runtime_llm_config
 from context.models import DealContext, SignalContext
+
+LOGGER = logging.getLogger(__name__)
 
 
 def context_agent(
@@ -22,7 +27,7 @@ def context_agent(
     workflow_id: str = "deal_followup_workflow",
     run_id: str | None = None,
 ) -> DealContext:
-    _ = render_prompt(
+    prompt_text = render_prompt(
         "context_prompt.txt",
         prompt_contract={
             "workflow_goal": "Build normalized deal context for downstream strategy and action agents.",
@@ -36,19 +41,44 @@ def context_agent(
     )
     reasoning = "Built persona and objection context from deal snapshot and signal."
     confidence = 0.82 if signal_context.stalled else 0.7
+    deterministic_payload = {
+        "persona": raw_data.get("persona", "unknown"),
+        "deal_stage": raw_data.get("deal_stage", "unknown"),
+        "known_objections": list(raw_data.get("known_objections", [])),
+        "recent_timeline": [raw_data.get("last_touch_summary", "")],
+        "recommended_tone": "consultative" if signal_context.urgency != "low" else "neutral",
+        "reasoning": reasoning,
+        "confidence": confidence,
+    }
+    required_fields = required_json_fields(DealContext)
+    model_output = json.dumps(deterministic_payload)
+    runtime_config = load_runtime_llm_config()
+    if runtime_config.enabled:
+        llm_result = generate_json(
+            LLMRequest(
+                prompt=prompt_text,
+                required_fields=required_fields,
+                model=runtime_config.openai_model,
+                timeout_sec=runtime_config.timeout_sec,
+            )
+        )
+        if llm_result.error:
+            LOGGER.warning("context_agent llm fallback: %s", llm_result.error)
+        elif llm_result.payload is None:
+            LOGGER.warning("context_agent llm fallback: empty payload")
+        else:
+            llm_validation = validate_model_output_json(
+                model_output=json.dumps(llm_result.payload),
+                required_json_fields=required_fields,
+                stage_name="context_agent",
+            )
+            if llm_validation["ok"]:
+                model_output = json.dumps(llm_result.payload)
+            else:
+                LOGGER.warning("context_agent llm validation fallback: %s", llm_validation["errors"])
     validation = validate_model_output_json(
-        model_output=json.dumps(
-            {
-                "persona": raw_data.get("persona", "unknown"),
-                "deal_stage": raw_data.get("deal_stage", "unknown"),
-                "known_objections": list(raw_data.get("known_objections", [])),
-                "recent_timeline": [raw_data.get("last_touch_summary", "")],
-                "recommended_tone": "consultative" if signal_context.urgency != "low" else "neutral",
-                "reasoning": reasoning,
-                "confidence": confidence,
-            }
-        ),
-        required_json_fields=required_json_fields(DealContext),
+        model_output=model_output,
+        required_json_fields=required_fields,
         stage_name="context_agent",
     )
     if not validation["ok"]:
