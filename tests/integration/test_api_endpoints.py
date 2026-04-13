@@ -168,12 +168,16 @@ def test_get_run_summary_by_deal_id_and_run_id_and_not_found(api_client_and_serv
     assert by_deal_payload["deal_id"] == "deal-api-001"
     assert by_deal_payload["run_id"] == run_id
     assert "path_metrics" in by_deal_payload
+    assert "feedback_metrics" in by_deal_payload
+    assert "adaptation_blocked_quality" in by_deal_payload["feedback_metrics"]
 
     by_run = client.get("/api/runs/summary", params={"run_id": run_id})
     assert by_run.status_code == 200
     by_run_payload = by_run.json()
     assert by_run_payload["run_id"] == run_id
     assert by_run_payload["deal_id"] == "deal-api-001"
+    assert "feedback_metrics" in by_run_payload
+    assert "adaptation_blocked_quality" in by_run_payload["feedback_metrics"]
 
     missing = client.get("/api/runs/summary", params={"run_id": "missing-run"})
     assert missing.status_code == 404

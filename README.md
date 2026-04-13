@@ -134,6 +134,7 @@ If one or more criteria are incomplete, the workflow is **Partial**.
 - capture execution + reply outcomes
 - generate initial insights
 - persist insights to memory stores
+- apply staged memory-quality gates and adaptation telemetry for auditable feedback decisions
 
 ## ✅ Current Workflow Implementation Status
 

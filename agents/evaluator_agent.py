@@ -13,6 +13,7 @@ import json
 
 from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
 from context.models import ExecutionContext, OutcomeContext
+from evaluation.outcome_analyzer import classify_outcome_detailed
 
 
 def evaluator_agent(
@@ -34,16 +35,22 @@ def evaluator_agent(
             "agent_id": "evaluator_agent",
         },
     )
-    if execution_context.status != "executed":
+    outcome_label = classify_outcome_detailed(outcome, execution_success=execution_context.status == "executed")
+    if outcome_label == "delivery_failure":
         label = "negative"
         insight = "Execution reliability issues reduced follow-up quality."
         adjustment = "Improve tool retry and fallback policies."
         confidence = 0.7
-    elif outcome.reply_received:
+    elif outcome_label == "positive":
         label = "positive"
         insight = "ROI framing improved reply likelihood for this persona."
         adjustment = "Prioritize ROI framing for similar stalled proposal-stage deals."
         confidence = 0.85
+    elif outcome_label == "delayed_positive":
+        label = "positive"
+        insight = "Late interest signal observed; sequencing likely worked with slower buyer timing."
+        adjustment = "Retain sequence structure and extend follow-up window before switching tactics."
+        confidence = 0.74
     else:
         label = "neutral"
         insight = "Action executed but no reply yet; timing or message angle may need refinement."

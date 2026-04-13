@@ -41,3 +41,27 @@ class WorkflowPathMetrics:
     def snapshot(self) -> dict[str, int]:
         with self._lock:
             return dict(self._counts)
+
+
+class EvaluationFeedbackMetrics:
+    """Lightweight counters for memory/evaluation loop observability."""
+
+    def __init__(self) -> None:
+        self._counts = {
+            "retrieval_attempts": 0,
+            "retrieval_hits": 0,
+            "adaptation_applied": 0,
+            "adaptation_skipped": 0,
+            "adaptation_blocked_quality": 0,
+        }
+        self._lock = Lock()
+
+    def increment(self, key: str, *, amount: int = 1) -> None:
+        if key not in self._counts:
+            return
+        with self._lock:
+            self._counts[key] += amount
+
+    def snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return dict(self._counts)

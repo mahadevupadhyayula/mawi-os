@@ -62,7 +62,7 @@ Roadmap organization:
 - Signal → strategy → action pipeline **[Implemented]**
 - Approval queue and policy-based human gate **[Implemented]**
 - Tool execution stubs (email/CRM) **[Implemented]**
-- Basic evaluation + memory feedback **[Partial]**
+- Basic evaluation + memory feedback **[Implemented]**
 
 ### MVP Exit Criteria
 

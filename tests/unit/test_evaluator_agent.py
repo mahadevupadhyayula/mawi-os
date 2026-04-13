@@ -32,3 +32,13 @@ def test_evaluator_neutral_when_executed_without_reply() -> None:
 
     assert result.outcome_label == "neutral"
     assert result.confidence == 0.65
+
+
+def test_evaluator_delayed_positive_when_interested_note_present() -> None:
+    result = evaluator_agent(
+        _execution("executed"),
+        ExecutionOutcome(reply_received=False, meeting_booked=False, notes="Prospect interested; asks to reconnect next quarter."),
+    )
+
+    assert result.outcome_label == "positive"
+    assert "Late interest signal" in result.insight
