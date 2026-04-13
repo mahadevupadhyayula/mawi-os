@@ -576,3 +576,28 @@ def attach_prompt_outcome_metrics(
 
 def attach_prompt_rejection(*, action_id: str) -> None:
     _PROMPT_DIAGNOSTICS_REPO.record_rejection(action_id=action_id)
+
+
+def attach_prompt_run_metadata(
+    *,
+    run_id: str,
+    agent_id: str,
+    prompt_name: str,
+    llm_enabled: bool | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    llm_latency_ms: int | None = None,
+    token_usage: dict[str, int] | None = None,
+    fallback_reason: str | None = None,
+) -> None:
+    _PROMPT_DIAGNOSTICS_REPO.attach_run_metadata(
+        run_id=run_id,
+        agent_id=agent_id,
+        prompt_name=prompt_name,
+        llm_enabled=llm_enabled,
+        provider=provider,
+        model=model,
+        llm_latency_ms=llm_latency_ms,
+        token_usage=token_usage,
+        fallback_reason=fallback_reason,
+    )

@@ -13,7 +13,13 @@ import logging
 
 from agents.contracts import make_result
 from agents.inference import resolve_model_output
-from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
+from agents.prompt_templates import (
+    PromptLintError,
+    attach_prompt_run_metadata,
+    render_prompt,
+    required_json_fields,
+    validate_model_output_json,
+)
 from agents.runtime_config import load_runtime_llm_config
 from context.models import SignalContext
 
@@ -50,7 +56,7 @@ def signal_agent(raw_data: dict, *, workflow_id: str = "deal_followup_workflow",
     deterministic_json_string = json.dumps(deterministic_payload)
     runtime_config = load_runtime_llm_config()
     llm_enabled = runtime_config.enabled
-    model_output = resolve_model_output(
+    resolution = resolve_model_output(
         llm_enabled=llm_enabled,
         deterministic_json_string=deterministic_json_string,
         prompt_text=prompt_text,
@@ -60,8 +66,19 @@ def signal_agent(raw_data: dict, *, workflow_id: str = "deal_followup_workflow",
         timeout_sec=runtime_config.timeout_sec,
         logger=LOGGER,
     )
+    attach_prompt_run_metadata(
+        run_id=str(run_id or "adhoc-run"),
+        agent_id="signal_agent",
+        prompt_name="signal_prompt.txt",
+        llm_enabled=resolution.llm_enabled,
+        provider=resolution.provider,
+        model=resolution.model,
+        llm_latency_ms=resolution.llm_latency_ms,
+        token_usage=resolution.token_usage,
+        fallback_reason=resolution.fallback_reason,
+    )
     validation = validate_model_output_json(
-        model_output=model_output,
+        model_output=resolution.model_output,
         required_json_fields=required_fields,
         stage_name="signal_agent",
     )

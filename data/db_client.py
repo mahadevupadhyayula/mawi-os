@@ -242,6 +242,12 @@ class DBClient:
                     error_type TEXT,
                     fallback_used INTEGER NOT NULL DEFAULT 0,
                     confidence REAL,
+                    llm_enabled INTEGER,
+                    provider TEXT,
+                    model TEXT,
+                    llm_latency_ms INTEGER,
+                    token_usage_json TEXT,
+                    fallback_reason TEXT,
                     outcome_label TEXT,
                     created_at TEXT NOT NULL
                 );
@@ -333,12 +339,30 @@ class DBClient:
                 );
                 """
             )
-            self._ensure_column(conn, "action_steps", "retry_count", "INTEGER NOT NULL DEFAULT 0")
-            self._ensure_column(conn, "action_steps", "execution_result_json", "TEXT NOT NULL DEFAULT '{}'")
-            self._ensure_column(conn, "action_steps", "last_error", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "prompt_variant_rollouts", "active_release_id", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "prompt_variant_rollouts", "previous_stable_release_id", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "prompt_variant_rollouts", "workflow_release_version", "TEXT NOT NULL DEFAULT 'unversioned'")
+            self._ensure_prompt_runs_extensions(conn)
+
+    def _ensure_prompt_runs_extensions(self, conn: sqlite3.Connection) -> None:
+        existing = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(prompt_runs)").fetchall()
+        }
+        extensions: dict[str, str] = {
+            "llm_enabled": "INTEGER",
+            "provider": "TEXT",
+            "model": "TEXT",
+            "llm_latency_ms": "INTEGER",
+            "token_usage_json": "TEXT",
+            "fallback_reason": "TEXT",
+        }
+        for column_name, column_type in extensions.items():
+            if column_name not in existing:
+                conn.execute(f"ALTER TABLE prompt_runs ADD COLUMN {column_name} {column_type}")
+        self._ensure_column(conn, "action_steps", "retry_count", "INTEGER NOT NULL DEFAULT 0")
+        self._ensure_column(conn, "action_steps", "execution_result_json", "TEXT NOT NULL DEFAULT '{}'")
+        self._ensure_column(conn, "action_steps", "last_error", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_column(conn, "prompt_variant_rollouts", "active_release_id", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_column(conn, "prompt_variant_rollouts", "previous_stable_release_id", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_column(conn, "prompt_variant_rollouts", "workflow_release_version", "TEXT NOT NULL DEFAULT 'unversioned'")
 
     def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
         rows = conn.execute(f"PRAGMA table_info({table})").fetchall()

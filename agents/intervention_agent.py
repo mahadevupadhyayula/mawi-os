@@ -12,8 +12,14 @@ import json
 import logging
 
 from agents.contracts import make_result
-from agents.llm_client import LLMRequest, generate_json
-from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
+from agents.inference import resolve_model_output
+from agents.prompt_templates import (
+    PromptLintError,
+    attach_prompt_run_metadata,
+    render_prompt,
+    required_json_fields,
+    validate_model_output_json,
+)
 from agents.runtime_config import load_runtime_llm_config
 from context.models import DealContext, InterventionDecisionContext, SignalContext
 
@@ -68,33 +74,31 @@ def intervention_agent(
         "confidence": confidence,
     }
     required_fields = required_json_fields(InterventionDecisionContext)
-    model_output = json.dumps(deterministic_payload)
+    deterministic_json_string = json.dumps(deterministic_payload)
     runtime_config = load_runtime_llm_config()
-    if runtime_config.enabled:
-        llm_result = generate_json(
-            LLMRequest(
-                prompt=prompt_text,
-                required_fields=required_fields,
-                model=runtime_config.openai_model,
-                timeout_sec=runtime_config.timeout_sec,
-            )
-        )
-        if llm_result.error:
-            LOGGER.warning("intervention_agent llm fallback: %s", llm_result.error)
-        elif llm_result.payload is None:
-            LOGGER.warning("intervention_agent llm fallback: empty payload")
-        else:
-            llm_validation = validate_model_output_json(
-                model_output=json.dumps(llm_result.payload),
-                required_json_fields=required_fields,
-                stage_name="intervention_agent",
-            )
-            if llm_validation["ok"]:
-                model_output = json.dumps(llm_result.payload)
-            else:
-                LOGGER.warning("intervention_agent llm validation fallback: %s", llm_validation["errors"])
+    resolution = resolve_model_output(
+        llm_enabled=runtime_config.enabled,
+        deterministic_json_string=deterministic_json_string,
+        prompt_text=prompt_text,
+        required_fields=required_fields,
+        stage_name="intervention_agent",
+        model=runtime_config.openai_model,
+        timeout_sec=runtime_config.timeout_sec,
+        logger=LOGGER,
+    )
+    attach_prompt_run_metadata(
+        run_id=str(run_id or "adhoc-run"),
+        agent_id="intervention_agent",
+        prompt_name="intervention_prompt.txt",
+        llm_enabled=resolution.llm_enabled,
+        provider=resolution.provider,
+        model=resolution.model,
+        llm_latency_ms=resolution.llm_latency_ms,
+        token_usage=resolution.token_usage,
+        fallback_reason=resolution.fallback_reason,
+    )
     validation = validate_model_output_json(
-        model_output=model_output,
+        model_output=resolution.model_output,
         required_json_fields=required_fields,
         stage_name="intervention_agent",
     )
