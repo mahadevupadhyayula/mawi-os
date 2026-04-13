@@ -15,6 +15,16 @@ import data.db_client as db_client_module
 from data.db_client import DBClient
 
 
+@pytest.fixture(autouse=True)
+def llm_env_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep LLM behavior deterministic in CI unless a test opts in explicitly."""
+    monkeypatch.setenv("MAWI_LLM_ENABLED", "false")
+    monkeypatch.setenv("MAWI_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("MAWI_OPENAI_MODEL", "gpt-4.1-mini")
+    monkeypatch.setenv("MAWI_LLM_TIMEOUT_SEC", "5")
+    monkeypatch.setenv("MAWI_LLM_MAX_RETRIES", "0")
+
+
 @pytest.fixture(scope="session")
 def mawi_db_path() -> Path:
     """Test database location backed by the MAWI_DB_PATH environment variable."""

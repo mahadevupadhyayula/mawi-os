@@ -6,6 +6,7 @@ import pytest
 
 pytest.importorskip("fastapi")
 
+from agents.llm_client import LLMResult
 from api.app import create_web_app
 from api.router import get_service
 from api.service import WorkflowAPI
@@ -248,3 +249,82 @@ def test_intervention_and_crm_sync_routes_and_sync_status(api_client_and_service
     missing_params = client.get("/api/crm/sync-status")
     assert missing_params.status_code == 400
     assert missing_params.json()["error"] == "invalid_request"
+
+
+def test_start_workflow_contract_unchanged_with_llm_explicitly_disabled(api_client_and_service, monkeypatch) -> None:
+    monkeypatch.setenv("MAWI_LLM_ENABLED", "false")
+    client, _ = api_client_and_service
+    response = client.post("/api/workflows/start?workflow=deal-followup", json={"deal_id": "deal-api-001"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["deal_id"] == "deal-api-001"
+    assert payload["meta"]["workflow_stage"] == "waiting_approval"
+    assert payload["signal_context"]["meta"]["agent"] == "signal_agent"
+    assert payload["deal_context"]["meta"]["agent"] == "context_agent"
+    assert payload["decision_context"]["meta"]["agent"] == "strategist_agent"
+    assert payload["action_context"]["meta"]["agent"] == "action_agent"
+
+
+def test_start_workflow_llm_enabled_happy_path_with_mocked_client(api_client_and_service, monkeypatch) -> None:
+    monkeypatch.setenv("MAWI_LLM_ENABLED", "true")
+
+    def _mock_generate_json(request):
+        required = set(request.required_fields)
+        payload_by_fields: dict[frozenset[str], dict[str, Any]] = {
+            frozenset({"stalled", "days_since_reply", "urgency", "trigger_reason", "reasoning", "confidence"}): {
+                "stalled": True,
+                "days_since_reply": 9,
+                "urgency": "high",
+                "trigger_reason": "no_reply_5_days",
+                "reasoning": "LLM signal",
+                "confidence": 0.94,
+            },
+            frozenset({"persona", "deal_stage", "known_objections", "recent_timeline", "recommended_tone", "reasoning", "confidence"}): {
+                "persona": "RevOps",
+                "deal_stage": "proposal",
+                "known_objections": ["security review"],
+                "recent_timeline": ["LLM timeline"],
+                "recommended_tone": "consultative",
+                "reasoning": "LLM context",
+                "confidence": 0.9,
+            },
+            frozenset({"strategy_id", "strategy_type", "message_goal", "fallback_strategy", "memory_evidence_used", "memory_confidence_impact", "memory_rationale", "reasoning", "confidence"}): {
+                "strategy_id": "strat-roi_framing",
+                "strategy_type": "roi_framing",
+                "message_goal": "restart_conversation",
+                "fallback_strategy": "social_proof",
+                "memory_evidence_used": [],
+                "memory_confidence_impact": 0.0,
+                "memory_rationale": "none",
+                "reasoning": "LLM strategy",
+                "confidence": 0.88,
+            },
+            frozenset({"plan_id", "steps", "status", "reasoning", "confidence"}): {
+                "plan_id": "plan-llm-1",
+                "steps": [],
+                "status": "draft",
+                "reasoning": "LLM action plan",
+                "confidence": 0.86,
+            },
+        }
+        payload = payload_by_fields[frozenset(required)]
+        return LLMResult(
+            raw_text=str(payload),
+            payload=payload,
+            latency_ms=15,
+            provider="openai",
+            model="gpt-4.1-mini",
+            error=None,
+            token_usage={"total_tokens": 111},
+        )
+
+    monkeypatch.setattr("agents.llm_client.generate_json", _mock_generate_json)
+    client, _ = api_client_and_service
+
+    response = client.post("/api/workflows/start?workflow=deal-followup", json={"deal_id": "deal-api-001"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["workflow_stage"] == "waiting_approval"
+    assert payload["deal_context"]["persona"] == "RevOps"
+    assert payload["signal_context"]["urgency"] == "high"
