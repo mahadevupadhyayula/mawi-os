@@ -29,6 +29,12 @@ class PromptDiagnosticsRepository:
         confidence: float | None = None,
         trace_sampled: bool = False,
         trace_payload: dict[str, Any] | None = None,
+        llm_enabled: bool | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        llm_latency_ms: int | None = None,
+        token_usage_json: str | None = None,
+        fallback_reason: str | None = None,
     ) -> None:
         now = datetime.now(timezone.utc).isoformat()
         with self.db.tx() as conn:
@@ -47,8 +53,14 @@ class PromptDiagnosticsRepository:
                     error_type,
                     fallback_used,
                     confidence,
+                    llm_enabled,
+                    provider,
+                    model,
+                    llm_latency_ms,
+                    token_usage_json,
+                    fallback_reason,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -63,6 +75,12 @@ class PromptDiagnosticsRepository:
                     error_type,
                     1 if fallback_used else 0,
                     confidence,
+                    (1 if llm_enabled else 0) if llm_enabled is not None else None,
+                    provider,
+                    model,
+                    llm_latency_ms,
+                    token_usage_json,
+                    fallback_reason,
                     now,
                 ),
                 )
@@ -80,6 +98,52 @@ class PromptDiagnosticsRepository:
                     """,
                     (run_id, workflow_id, agent_id, prompt_name, json.dumps(trace_payload, sort_keys=True), now),
                 )
+
+    def attach_run_metadata(
+        self,
+        *,
+        run_id: str,
+        agent_id: str,
+        prompt_name: str,
+        llm_enabled: bool | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        llm_latency_ms: int | None = None,
+        token_usage: dict[str, int] | None = None,
+        fallback_reason: str | None = None,
+    ) -> None:
+        token_usage_json = json.dumps(token_usage, sort_keys=True) if token_usage is not None else None
+        with self.db.tx() as conn:
+            conn.execute(
+                """
+                UPDATE prompt_runs
+                SET
+                    llm_enabled = COALESCE(?, llm_enabled),
+                    provider = COALESCE(?, provider),
+                    model = COALESCE(?, model),
+                    llm_latency_ms = COALESCE(?, llm_latency_ms),
+                    token_usage_json = COALESCE(?, token_usage_json),
+                    fallback_reason = COALESCE(?, fallback_reason)
+                WHERE id = (
+                    SELECT id
+                    FROM prompt_runs
+                    WHERE run_id = ? AND agent_id = ? AND prompt_name = ?
+                    ORDER BY id DESC
+                    LIMIT 1
+                )
+                """,
+                (
+                    (1 if llm_enabled else 0) if llm_enabled is not None else None,
+                    provider,
+                    model,
+                    llm_latency_ms,
+                    token_usage_json,
+                    fallback_reason,
+                    run_id,
+                    agent_id,
+                    prompt_name,
+                ),
+            )
 
     def assign_variant(self, *, run_id: str, workflow_id: str) -> dict[str, str]:
         rollout = self._get_or_create_rollout(workflow_id)

@@ -28,6 +28,7 @@ class LLMResult:
     provider: str
     model: str
     error: str | None
+    token_usage: dict[str, int] | None
 
 
 def generate_json(request: LLMRequest) -> LLMResult:
@@ -49,6 +50,7 @@ def generate_json(request: LLMRequest) -> LLMResult:
             provider=provider,
             model=request.model,
             error="provider_error",
+            token_usage=None,
         )
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
@@ -60,6 +62,7 @@ def generate_json(request: LLMRequest) -> LLMResult:
             provider=provider,
             model=request.model,
             error="provider_error",
+            token_usage=None,
         )
 
     model = (
@@ -97,7 +100,7 @@ def generate_json(request: LLMRequest) -> LLMResult:
                 if attempt < max_retries:
                     _sleep_before_retry(backoff_sec, attempt)
                     continue
-                return _result(last_raw_text, None, started_at, provider, model, "invalid_json")
+                return _result(last_raw_text, None, started_at, provider, model, "invalid_json", None)
 
             missing_fields = [field for field in request.required_fields if field not in payload]
             if missing_fields:
@@ -108,9 +111,10 @@ def generate_json(request: LLMRequest) -> LLMResult:
                     provider=provider,
                     model=model,
                     error="missing_required_fields",
+                    token_usage=_extract_token_usage(response_json),
                 )
 
-            return _result(raw_text, payload, started_at, provider, model, None)
+            return _result(raw_text, payload, started_at, provider, model, None, _extract_token_usage(response_json))
 
         except TimeoutError as exc:
             last_raw_text = str(exc)
@@ -118,7 +122,7 @@ def generate_json(request: LLMRequest) -> LLMResult:
             if attempt < max_retries:
                 _sleep_before_retry(backoff_sec, attempt)
                 continue
-            return _result(last_raw_text, None, started_at, provider, model, "timeout")
+            return _result(last_raw_text, None, started_at, provider, model, "timeout", None)
 
         except _RetryableProviderError as exc:
             last_raw_text = str(exc)
@@ -126,12 +130,12 @@ def generate_json(request: LLMRequest) -> LLMResult:
             if attempt < max_retries:
                 _sleep_before_retry(backoff_sec, attempt)
                 continue
-            return _result(last_raw_text, None, started_at, provider, model, "provider_error")
+            return _result(last_raw_text, None, started_at, provider, model, "provider_error", None)
 
         except Exception as exc:  # Defensive catch to ensure structured errors.
-            return _result(str(exc), None, started_at, provider, model, "provider_error")
+            return _result(str(exc), None, started_at, provider, model, "provider_error", None)
 
-    return _result(last_raw_text, None, started_at, provider, model, last_error_code)
+    return _result(last_raw_text, None, started_at, provider, model, last_error_code, None)
 
 
 class _RetryableProviderError(Exception):
@@ -255,6 +259,7 @@ def _result(
     provider: str,
     model: str,
     error: str | None,
+    token_usage: dict[str, int] | None,
 ) -> LLMResult:
     latency_ms = int((time.perf_counter() - started_at) * 1000)
     return LLMResult(
@@ -264,4 +269,17 @@ def _result(
         provider=provider,
         model=model,
         error=error,
+        token_usage=token_usage,
     )
+
+
+def _extract_token_usage(response_json: dict[str, Any]) -> dict[str, int] | None:
+    usage = response_json.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    normalized: dict[str, int] = {}
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        value = usage.get(key)
+        if isinstance(value, int):
+            normalized[key] = value
+    return normalized or None
