@@ -247,6 +247,7 @@ class DBClient:
                     model TEXT,
                     llm_latency_ms INTEGER,
                     token_usage_json TEXT,
+                    redaction_occurred INTEGER,
                     fallback_reason TEXT,
                     outcome_label TEXT,
                     created_at TEXT NOT NULL
@@ -352,6 +353,7 @@ class DBClient:
             "model": "TEXT",
             "llm_latency_ms": "INTEGER",
             "token_usage_json": "TEXT",
+            "redaction_occurred": "INTEGER",
             "fallback_reason": "TEXT",
         }
         for column_name, column_type in extensions.items():

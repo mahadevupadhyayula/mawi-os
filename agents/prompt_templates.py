@@ -588,6 +588,7 @@ def attach_prompt_run_metadata(
     model: str | None = None,
     llm_latency_ms: int | None = None,
     token_usage: dict[str, int] | None = None,
+    redaction_occurred: bool | None = None,
     fallback_reason: str | None = None,
 ) -> None:
     _PROMPT_DIAGNOSTICS_REPO.attach_run_metadata(
@@ -599,5 +600,6 @@ def attach_prompt_run_metadata(
         model=model,
         llm_latency_ms=llm_latency_ms,
         token_usage=token_usage,
+        redaction_occurred=redaction_occurred,
         fallback_reason=fallback_reason,
     )
