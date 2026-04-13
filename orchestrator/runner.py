@@ -29,7 +29,8 @@ from context.envelope import append_or_refine_section, set_stage
 from context.models import ActionContext, ActionPlanContext, ActionStep, ContextEnvelope, MetaContext, OutcomeContext
 from data.models import RUN_STATUS_COMPLETED, RUN_STATUS_FAILED, RUN_STATUS_RUNNING, RUN_STATUS_SKIPPED, RUN_STATUS_WAITING_APPROVAL
 from data.repositories import ActionRepository, OutcomeRepository, WorkflowRepository
-from evaluation.metrics import WorkflowPathMetrics
+from evaluation.metrics import EvaluationFeedbackMetrics, WorkflowPathMetrics
+from evaluation.feedback_policy import gate_memory_evidence, summarize_adaptation
 from memory.long_term_store import LongTermMemory
 from memory.memory_models import OutcomeRecord
 from memory.retrieval import retrieve_persona_evidence
@@ -66,7 +67,23 @@ class WorkflowOrchestrator:
         self.action_repo = ActionRepository()
         self.outcome_repo = OutcomeRepository()
         self.path_metrics = WorkflowPathMetrics()
+        self.feedback_metrics = EvaluationFeedbackMetrics()
         self._run_ids: dict[str, str] = {}
+
+    def _feedback_stage(self, envelope: ContextEnvelope) -> int:
+        raw = envelope.raw_data.get("memory_feedback_stage", 1)
+        if isinstance(raw, int):
+            return max(1, min(raw, 3))
+        if isinstance(raw, str) and raw.isdigit():
+            return max(1, min(int(raw), 3))
+        return 1
+
+    def _feedback_min_quality_score(self, stage: int) -> float:
+        if stage <= 1:
+            return 0.0
+        if stage == 2:
+            return 0.02
+        return 0.04
 
     def _validate_workflow_definition(self, workflow_id: str, steps: list[str]) -> None:
         if "evaluator_agent" not in steps:
@@ -251,12 +268,26 @@ class WorkflowOrchestrator:
 
     def _handle_strategist_agent_step(self, workflow_id: str, step: str, deal_id: str, run_id: str, envelope: ContextEnvelope) -> bool:
         persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
-        memory_evidence = retrieve_persona_evidence(
+        stage = self._feedback_stage(envelope)
+        self.feedback_metrics.increment("retrieval_attempts")
+        retrieved = retrieve_persona_evidence(
             memory=self.long_memory,
             outcome_repo=self.outcome_repo,
             persona=persona,
+            min_quality_score=self._feedback_min_quality_score(stage),
         )
+        if retrieved:
+            self.feedback_metrics.increment("retrieval_hits")
+        memory_evidence, gate_reason = gate_memory_evidence(stage=stage, evidence=retrieved)
+        if not memory_evidence and retrieved:
+            self.feedback_metrics.increment("adaptation_blocked_quality")
         envelope.raw_data["memory_inputs_strategist"] = memory_evidence
+        envelope.raw_data["memory_retrieval_strategist"] = summarize_adaptation(
+            stage=stage,
+            selected_evidence=memory_evidence,
+            gate_reason=gate_reason,
+        )
+        envelope.raw_data["memory_feedback_stage_effective"] = stage
         decision = self._execute_with_step_audit(
             workflow_id=workflow_id,
             step=step,
@@ -300,12 +331,25 @@ class WorkflowOrchestrator:
 
     def _handle_action_agent_step(self, workflow_id: str, step: str, deal_id: str, run_id: str, envelope: ContextEnvelope) -> bool:
         persona = envelope.deal_context.persona if envelope.deal_context else "unknown"
-        memory_evidence = retrieve_persona_evidence(
+        stage = self._feedback_stage(envelope)
+        self.feedback_metrics.increment("retrieval_attempts")
+        retrieved = retrieve_persona_evidence(
             memory=self.long_memory,
             outcome_repo=self.outcome_repo,
             persona=persona,
+            min_quality_score=self._feedback_min_quality_score(stage),
         )
+        if retrieved:
+            self.feedback_metrics.increment("retrieval_hits")
+        memory_evidence, gate_reason = gate_memory_evidence(stage=stage, evidence=retrieved)
+        if not memory_evidence and retrieved:
+            self.feedback_metrics.increment("adaptation_blocked_quality")
         envelope.raw_data["memory_inputs_action"] = memory_evidence
+        envelope.raw_data["memory_retrieval_action"] = summarize_adaptation(
+            stage=stage,
+            selected_evidence=memory_evidence,
+            gate_reason=gate_reason,
+        )
         action_plan = self._execute_with_step_audit(
             workflow_id=workflow_id,
             step=step,
@@ -519,6 +563,11 @@ class WorkflowOrchestrator:
         run_id: str | None,
     ) -> None:
         memory_insight = f"{outcome_insight} | {_memory_influence_summary(envelope)}"
+        decision = envelope.decision_context
+        if decision and decision.memory_confidence_impact > 0:
+            self.feedback_metrics.increment("adaptation_applied")
+        else:
+            self.feedback_metrics.increment("adaptation_skipped")
         if run_id:
             self.outcome_repo.record_outcome(run_id, envelope.meta.deal_id, action_id, outcome_context)
             attach_prompt_outcome(run_id=run_id, outcome_label=outcome_label)

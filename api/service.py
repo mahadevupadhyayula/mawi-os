@@ -183,6 +183,7 @@ class WorkflowAPI:
         if summary is None:
             raise ValueError("Run summary not found")
         summary["path_metrics"] = self.orchestrator.path_metrics.snapshot()
+        summary["feedback_metrics"] = self.orchestrator.feedback_metrics.snapshot()
         return summary
 
     def get_prompt_diagnostics(self, *, limit: int = 25) -> dict:
