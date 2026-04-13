@@ -30,6 +30,7 @@ def resolve_model_output(
     stage_name: str,
     model: str,
     timeout_sec: float,
+    max_retries: int,
     logger: logging.Logger,
 ) -> ModelResolution:
     if llm_enabled:
@@ -39,6 +40,7 @@ def resolve_model_output(
                 required_fields=required_fields,
                 model=model,
                 timeout_sec=timeout_sec,
+                max_retries=max_retries,
             )
         )
         if llm_result.error:

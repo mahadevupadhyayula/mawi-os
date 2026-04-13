@@ -88,6 +88,7 @@ def evaluator_agent(
         stage_name="evaluator_agent",
         model=runtime_config.openai_model,
         timeout_sec=runtime_config.timeout_sec,
+        max_retries=runtime_config.max_retries,
         logger=LOGGER,
     )
     attach_prompt_run_metadata(

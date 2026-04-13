@@ -405,6 +405,12 @@ export MAWI_LLM_TEMPERATURE="0.0"
 export MAWI_LLM_BASE_URL="https://api.openai.com"
 ```
 
+`RuntimeLLMConfig` is the single source of truth for runtime retries/timeouts inside agent execution.
+
+- `runtime_config.timeout_sec` and `runtime_config.max_retries` are passed explicitly to each `LLMRequest`.
+- Environment values (`MAWI_LLM_TIMEOUT_SEC`, `MAWI_LLM_MAX_RETRIES`, `MAWI_LLM_RETRY_BACKOFF_SEC`) are used to *build* `RuntimeLLMConfig`, and remain a fallback only when an `LLMRequest` omits those fields directly.
+- Effective precedence for retry/timeout is: **explicit `LLMRequest` values > env fallback defaults**.
+
 ### Demo modes
 
 #### Mode A — deterministic (safe/offline)

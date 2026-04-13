@@ -64,6 +64,7 @@ def signal_agent(raw_data: dict, *, workflow_id: str = "deal_followup_workflow",
         stage_name="signal_agent",
         model=runtime_config.openai_model,
         timeout_sec=runtime_config.timeout_sec,
+        max_retries=runtime_config.max_retries,
         logger=LOGGER,
     )
     attach_prompt_run_metadata(
