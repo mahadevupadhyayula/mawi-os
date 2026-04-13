@@ -106,15 +106,17 @@ def intervention_agent(
         raise PromptLintError(f"intervention_agent output failed validation: {validation['errors']}")
     payload = validation["payload"]
     assert isinstance(payload, dict)
+    final_reasoning = str(payload["reasoning"])
+    final_confidence = float(payload["confidence"])
 
     result = make_result(
         InterventionDecisionContext(
             result=str(payload["result"]),
             reason=str(payload["reason"]),
-            reasoning=str(payload["reasoning"]),
-            confidence=float(payload["confidence"]),
+            reasoning=final_reasoning,
+            confidence=final_confidence,
         ),
-        reasoning,
-        confidence,
+        final_reasoning,
+        final_confidence,
     )
     return result.payload

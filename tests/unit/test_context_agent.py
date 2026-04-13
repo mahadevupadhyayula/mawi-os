@@ -1,4 +1,5 @@
 from agents.context_agent import context_agent
+from agents.contracts import make_result as make_result_contract
 from agents.llm_client import LLMResult
 from context.models import DealContext, SignalContext
 import pytest
@@ -73,6 +74,14 @@ def test_context_agent_llm_enabled_hydrates_dataclass_fields(monkeypatch: pytest
         )
 
     monkeypatch.setattr("agents.llm_client.generate_json", _mock_generate_json)
+    captured: dict[str, object] = {}
+
+    def _capture_make_result(payload_obj, reasoning: str, confidence: float, warnings=None):
+        captured["reasoning"] = reasoning
+        captured["confidence"] = confidence
+        return make_result_contract(payload_obj, reasoning, confidence, warnings)
+
+    monkeypatch.setattr("agents.context_agent.make_result", _capture_make_result)
 
     result = context_agent({"persona": "VP Sales", "deal_stage": "proposal"}, _signal(urgency="medium", stalled=True))
 
@@ -84,6 +93,7 @@ def test_context_agent_llm_enabled_hydrates_dataclass_fields(monkeypatch: pytest
     assert result.recommended_tone == "technical"
     assert result.reasoning == "LLM-generated context"
     assert result.confidence == 0.91
+    assert captured == {"reasoning": "LLM-generated context", "confidence": 0.91}
 
 
 @pytest.mark.parametrize("error_code", ["invalid_json", "provider_error"])

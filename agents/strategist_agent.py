@@ -118,6 +118,8 @@ def strategist_agent(
         raise PromptLintError(f"strategist_agent output failed validation: {validation['errors']}")
     payload = validation["payload"]
     assert isinstance(payload, dict)
+    final_reasoning = str(payload["reasoning"])
+    final_confidence = float(payload["confidence"])
     result = make_result(
         DecisionContext(
             strategy_id=str(payload["strategy_id"]),
@@ -127,10 +129,10 @@ def strategist_agent(
             memory_evidence_used=list(payload["memory_evidence_used"]),
             memory_confidence_impact=float(payload["memory_confidence_impact"]),
             memory_rationale=str(payload["memory_rationale"]),
-            reasoning=str(payload["reasoning"]),
-            confidence=float(payload["confidence"]),
+            reasoning=final_reasoning,
+            confidence=final_confidence,
         ),
-        reasoning,
-        confidence,
+        final_reasoning,
+        final_confidence,
     )
     return result.payload

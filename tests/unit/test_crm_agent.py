@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from agents.contracts import make_result as make_result_contract
 from agents.crm_agent import crm_agent
 from agents.inference import ModelResolution
 from agents.prompt_templates import PromptLintError
@@ -77,12 +78,23 @@ def test_crm_agent_uses_llm_payload_steps_when_not_fallback(monkeypatch) -> None
             model="gpt-test",
         ),
     )
+    captured: dict[str, object] = {}
+
+    def _capture_make_result(payload_obj, reasoning: str, confidence: float, warnings=None):
+        captured["reasoning"] = reasoning
+        captured["confidence"] = confidence
+        return make_result_contract(payload_obj, reasoning, confidence, warnings)
+
+    monkeypatch.setattr("agents.crm_agent.make_result", _capture_make_result)
 
     result = crm_agent({"crm_state": {"record_id": "crm-123"}}, _deal_context())
 
     assert [step.step_id for step in result.steps] == ["crm-step-1", "crm-step-2"]
     assert result.steps[0].subject == "llm email first"
     assert result.steps[1].preview == "second"
+    assert result.reasoning == "llm crm reasoning"
+    assert result.confidence == 0.77
+    assert captured == {"reasoning": "llm crm reasoning", "confidence": 0.77}
 
 
 def test_crm_agent_raises_prompt_lint_error_on_malformed_llm_step(monkeypatch) -> None:

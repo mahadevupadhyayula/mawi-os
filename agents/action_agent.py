@@ -225,6 +225,8 @@ def action_agent(
         raise PromptLintError(f"action_agent output failed validation: {validation['errors']}")
     payload = validation["payload"]
     assert isinstance(payload, dict)
+    final_reasoning = str(payload["reasoning"])
+    final_confidence = float(payload["confidence"])
 
     hydrated_steps = _hydrate_action_steps(payload.get("steps"), stage_name="action_agent")
     selected_steps = steps if resolution.fallback_reason else hydrated_steps
@@ -234,10 +236,10 @@ def action_agent(
             plan_id=str(payload["plan_id"]),
             steps=selected_steps,
             status=str(payload["status"]),
-            reasoning=str(payload["reasoning"]),
-            confidence=float(payload["confidence"]),
+            reasoning=final_reasoning,
+            confidence=final_confidence,
         ),
-        reasoning,
-        confidence,
+        final_reasoning,
+        final_confidence,
     )
     return result.payload
