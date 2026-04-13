@@ -26,6 +26,79 @@ from context.models import ActionPlanContext, ActionStep, DealContext, DecisionC
 
 LOGGER = logging.getLogger(__name__)
 
+_VALID_CHANNELS = {"email", "crm", "sms"}
+_VALID_STATUSES = {"draft", "pending_approval", "approved", "rejected", "executed", "failed", "partial"}
+
+
+def _hydrate_action_steps(payload_steps: object, *, stage_name: str) -> list[ActionStep]:
+    if not isinstance(payload_steps, list):
+        raise PromptLintError(f"{stage_name} output failed validation: ['steps must be a list']")
+
+    hydrated_steps: list[ActionStep] = []
+    required_step_fields = ("step_id", "order", "channel", "action_type")
+    for index, raw_step in enumerate(payload_steps):
+        if not isinstance(raw_step, dict):
+            raise PromptLintError(
+                f"{stage_name} output failed validation: ['steps[{index}] must be an object']"
+            )
+        missing = [field for field in required_step_fields if field not in raw_step]
+        if missing:
+            raise PromptLintError(
+                f"{stage_name} output failed validation: ['steps[{index}] missing required fields: {missing}']"
+            )
+        step_id = raw_step["step_id"]
+        order = raw_step["order"]
+        channel = raw_step["channel"]
+        action_type = raw_step["action_type"]
+        status = raw_step.get("status", "draft")
+        retry_count = raw_step.get("retry_count", 0)
+        execution_result = raw_step.get("execution_result", {})
+        if not isinstance(step_id, str) or not step_id:
+            raise PromptLintError(
+                f"{stage_name} output failed validation: ['steps[{index}].step_id must be a non-empty string']"
+            )
+        if isinstance(order, bool) or not isinstance(order, int):
+            raise PromptLintError(
+                f"{stage_name} output failed validation: ['steps[{index}].order must be an integer']"
+            )
+        if not isinstance(channel, str) or channel not in _VALID_CHANNELS:
+            raise PromptLintError(
+                f"{stage_name} output failed validation: ['steps[{index}].channel must be one of {_VALID_CHANNELS}']"
+            )
+        if not isinstance(action_type, str) or not action_type:
+            raise PromptLintError(
+                f"{stage_name} output failed validation: ['steps[{index}].action_type must be a non-empty string']"
+            )
+        if not isinstance(status, str) or status not in _VALID_STATUSES:
+            raise PromptLintError(
+                f"{stage_name} output failed validation: ['steps[{index}].status must be one of {_VALID_STATUSES}']"
+            )
+        if isinstance(retry_count, bool) or not isinstance(retry_count, int):
+            raise PromptLintError(
+                f"{stage_name} output failed validation: ['steps[{index}].retry_count must be an integer']"
+            )
+        if not isinstance(execution_result, dict):
+            raise PromptLintError(
+                f"{stage_name} output failed validation: ['steps[{index}].execution_result must be an object']"
+            )
+        hydrated_steps.append(
+            ActionStep(
+                step_id=step_id,
+                order=order,
+                channel=channel,
+                action_type=action_type,
+                subject=str(raw_step.get("subject", "")),
+                preview=str(raw_step.get("preview", "")),
+                body_draft=str(raw_step.get("body_draft", "")),
+                status=status,
+                retry_count=retry_count,
+                execution_result=execution_result,
+                last_error=str(raw_step.get("last_error", "")),
+            )
+        )
+
+    return sorted(hydrated_steps, key=lambda step: step.order)
+
 def _normalize_crm_state(raw_data: dict) -> dict:
     crm_state = raw_data.get("crm_state")
     if not isinstance(crm_state, dict):
@@ -134,10 +207,13 @@ def crm_agent(
     payload = validation["payload"]
     assert isinstance(payload, dict)
 
+    hydrated_steps = _hydrate_action_steps(payload.get("steps"), stage_name="crm_agent")
+    selected_steps = [step] if resolution.fallback_reason else hydrated_steps
+
     result = make_result(
         ActionPlanContext(
             plan_id=str(payload["plan_id"]),
-            steps=[step],
+            steps=selected_steps,
             status=str(payload["status"]),
             reasoning=str(payload["reasoning"]),
             confidence=float(payload["confidence"]),

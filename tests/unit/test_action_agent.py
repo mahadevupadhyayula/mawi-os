@@ -1,4 +1,8 @@
+import json
+
 from agents.action_agent import action_agent
+from agents.inference import ModelResolution
+from agents.prompt_templates import PromptLintError
 from context.models import ActionPlanContext, DealContext, DecisionContext
 
 
@@ -52,3 +56,81 @@ def test_action_agent_non_roi_strategy_uses_risk_crm_copy() -> None:
 
     assert result.steps[1].channel == "crm"
     assert "sequenced follow-up" in result.steps[1].preview
+
+
+def test_action_agent_uses_llm_payload_steps_when_not_fallback(monkeypatch) -> None:
+    payload = {
+        "plan_id": "llm-plan",
+        "steps": [
+            {
+                "step_id": "llm-step-2",
+                "order": 2,
+                "channel": "crm",
+                "action_type": "update_crm",
+                "preview": "llm crm preview",
+                "body_draft": "llm crm body",
+                "status": "approved",
+            },
+            {
+                "step_id": "llm-step-1",
+                "order": 1,
+                "channel": "email",
+                "action_type": "send_email",
+                "subject": "llm subject",
+                "preview": "llm email preview",
+                "body_draft": "llm email body",
+                "status": "pending_approval",
+            },
+        ],
+        "status": "pending_approval",
+        "reasoning": "llm reasoning",
+        "confidence": 0.91,
+    }
+    monkeypatch.setattr(
+        "agents.action_agent.resolve_model_output",
+        lambda **_: ModelResolution(
+            model_output=json.dumps(payload),
+            llm_enabled=True,
+            provider="openai",
+            model="gpt-test",
+        ),
+    )
+
+    result = action_agent(_decision(memory_evidence_used=[]), _deal())
+
+    assert [step.step_id for step in result.steps] == ["llm-step-1", "llm-step-2"]
+    assert result.steps[0].subject == "llm subject"
+    assert result.steps[1].preview == "llm crm preview"
+    assert result.status == "pending_approval"
+
+
+def test_action_agent_raises_prompt_lint_error_on_malformed_llm_step(monkeypatch) -> None:
+    payload = {
+        "plan_id": "llm-plan",
+        "steps": [
+            {
+                "step_id": "llm-step-1",
+                "order": 1,
+                "action_type": "send_email",
+            }
+        ],
+        "status": "draft",
+        "reasoning": "llm reasoning",
+        "confidence": 0.5,
+    }
+    monkeypatch.setattr(
+        "agents.action_agent.resolve_model_output",
+        lambda **_: ModelResolution(
+            model_output=json.dumps(payload),
+            llm_enabled=True,
+            provider="openai",
+            model="gpt-test",
+        ),
+    )
+
+    try:
+        action_agent(_decision(), _deal())
+    except PromptLintError as exc:
+        assert "missing required fields" in str(exc)
+    else:
+        raise AssertionError("Expected PromptLintError")
