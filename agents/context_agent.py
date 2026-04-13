@@ -12,7 +12,7 @@ import json
 import logging
 
 from agents.contracts import make_result
-from agents.llm_client import LLMRequest, generate_json
+from agents.inference import resolve_model_output
 from agents.prompt_templates import PromptLintError, render_prompt, required_json_fields, validate_model_output_json
 from agents.runtime_config import load_runtime_llm_config
 from context.models import DealContext, SignalContext
@@ -51,31 +51,19 @@ def context_agent(
         "confidence": confidence,
     }
     required_fields = required_json_fields(DealContext)
-    model_output = json.dumps(deterministic_payload)
+    deterministic_json_string = json.dumps(deterministic_payload)
     runtime_config = load_runtime_llm_config()
-    if runtime_config.enabled:
-        llm_result = generate_json(
-            LLMRequest(
-                prompt=prompt_text,
-                required_fields=required_fields,
-                model=runtime_config.openai_model,
-                timeout_sec=runtime_config.timeout_sec,
-            )
-        )
-        if llm_result.error:
-            LOGGER.warning("context_agent llm fallback: %s", llm_result.error)
-        elif llm_result.payload is None:
-            LOGGER.warning("context_agent llm fallback: empty payload")
-        else:
-            llm_validation = validate_model_output_json(
-                model_output=json.dumps(llm_result.payload),
-                required_json_fields=required_fields,
-                stage_name="context_agent",
-            )
-            if llm_validation["ok"]:
-                model_output = json.dumps(llm_result.payload)
-            else:
-                LOGGER.warning("context_agent llm validation fallback: %s", llm_validation["errors"])
+    llm_enabled = runtime_config.enabled
+    model_output = resolve_model_output(
+        llm_enabled=llm_enabled,
+        deterministic_json_string=deterministic_json_string,
+        prompt_text=prompt_text,
+        required_fields=required_fields,
+        stage_name="context_agent",
+        model=runtime_config.openai_model,
+        timeout_sec=runtime_config.timeout_sec,
+        logger=LOGGER,
+    )
     validation = validate_model_output_json(
         model_output=model_output,
         required_json_fields=required_fields,
