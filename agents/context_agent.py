@@ -90,6 +90,8 @@ def context_agent(
         raise PromptLintError(f"context_agent output failed validation: {validation['errors']}")
     payload = validation["payload"]
     assert isinstance(payload, dict)
+    final_reasoning = str(payload["reasoning"])
+    final_confidence = float(payload["confidence"])
     result = make_result(
         DealContext(
             persona=str(payload["persona"]),
@@ -97,10 +99,10 @@ def context_agent(
             known_objections=list(payload["known_objections"]),
             recent_timeline=list(payload["recent_timeline"]),
             recommended_tone=str(payload["recommended_tone"]),
-            reasoning=str(payload["reasoning"]),
-            confidence=float(payload["confidence"]),
+            reasoning=final_reasoning,
+            confidence=final_confidence,
         ),
-        reasoning,
-        confidence,
+        final_reasoning,
+        final_confidence,
     )
     return result.payload

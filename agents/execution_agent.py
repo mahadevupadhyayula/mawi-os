@@ -234,6 +234,8 @@ def execution_agent(
         raise PromptLintError(f"execution_agent output failed validation: {validation['errors']}")
     payload = validation["payload"]
     assert isinstance(payload, dict)
+    final_reasoning = str(payload["reasoning"])
+    final_confidence = float(payload["confidence"])
     result = make_result(
         ExecutionContext(
             execution_id=str(payload["execution_id"]),
@@ -241,10 +243,10 @@ def execution_agent(
             email_result=dict(payload["email_result"]),
             crm_result=dict(payload["crm_result"]),
             tool_events=list(payload["tool_events"]),
-            reasoning=str(payload["reasoning"]),
-            confidence=float(payload["confidence"]),
+            reasoning=final_reasoning,
+            confidence=final_confidence,
         ),
-        reasoning,
-        confidence,
+        final_reasoning,
+        final_confidence,
     )
     return result.payload

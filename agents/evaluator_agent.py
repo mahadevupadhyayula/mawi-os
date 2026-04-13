@@ -110,15 +110,17 @@ def evaluator_agent(
         raise PromptLintError(f"evaluator_agent output failed validation: {validation['errors']}")
     payload = validation["payload"]
     assert isinstance(payload, dict)
+    final_reasoning = str(payload["reasoning"])
+    final_confidence = float(payload["confidence"])
     result = make_result(
         OutcomeContext(
             outcome_label=str(payload["outcome_label"]),
             insight=str(payload["insight"]),
             recommended_adjustment=str(payload["recommended_adjustment"]),
-            reasoning=str(payload["reasoning"]),
-            confidence=float(payload["confidence"]),
+            reasoning=final_reasoning,
+            confidence=final_confidence,
         ),
-        reasoning,
-        confidence,
+        final_reasoning,
+        final_confidence,
     )
     return result.payload

@@ -1,6 +1,7 @@
 import json
 
 from agents.action_agent import action_agent
+from agents.contracts import make_result as make_result_contract
 from agents.inference import ModelResolution
 from agents.prompt_templates import PromptLintError
 from context.models import ActionPlanContext, DealContext, DecisionContext
@@ -95,6 +96,14 @@ def test_action_agent_uses_llm_payload_steps_when_not_fallback(monkeypatch) -> N
             model="gpt-test",
         ),
     )
+    captured: dict[str, object] = {}
+
+    def _capture_make_result(payload_obj, reasoning: str, confidence: float, warnings=None):
+        captured["reasoning"] = reasoning
+        captured["confidence"] = confidence
+        return make_result_contract(payload_obj, reasoning, confidence, warnings)
+
+    monkeypatch.setattr("agents.action_agent.make_result", _capture_make_result)
 
     result = action_agent(_decision(memory_evidence_used=[]), _deal())
 
@@ -102,6 +111,9 @@ def test_action_agent_uses_llm_payload_steps_when_not_fallback(monkeypatch) -> N
     assert result.steps[0].subject == "llm subject"
     assert result.steps[1].preview == "llm crm preview"
     assert result.status == "pending_approval"
+    assert result.reasoning == "llm reasoning"
+    assert result.confidence == 0.91
+    assert captured == {"reasoning": "llm reasoning", "confidence": 0.91}
 
 
 def test_action_agent_raises_prompt_lint_error_on_malformed_llm_step(monkeypatch) -> None:

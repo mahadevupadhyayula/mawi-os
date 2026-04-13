@@ -87,16 +87,18 @@ def signal_agent(raw_data: dict, *, workflow_id: str = "deal_followup_workflow",
 
     payload = validation["payload"]
     assert isinstance(payload, dict)
+    final_reasoning = str(payload["reasoning"])
+    final_confidence = float(payload["confidence"])
     result = make_result(
         SignalContext(
             stalled=bool(payload["stalled"]),
             days_since_reply=int(payload["days_since_reply"]),
             urgency=str(payload["urgency"]),
             trigger_reason=str(payload["trigger_reason"]),
-            reasoning=str(payload["reasoning"]),
-            confidence=float(payload["confidence"]),
+            reasoning=final_reasoning,
+            confidence=final_confidence,
         ),
-        reasoning,
-        confidence,
+        final_reasoning,
+        final_confidence,
     )
     return result.payload
