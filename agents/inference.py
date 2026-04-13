@@ -18,6 +18,7 @@ class ModelResolution:
     model: str | None = None
     llm_latency_ms: int | None = None
     token_usage: dict[str, int] | None = None
+    redaction_occurred: bool | None = None
     fallback_reason: str | None = None
 
 
@@ -52,6 +53,7 @@ def resolve_model_output(
                 model=llm_result.model,
                 llm_latency_ms=llm_result.latency_ms,
                 token_usage=llm_result.token_usage,
+                redaction_occurred=llm_result.redaction_occurred,
                 fallback_reason=f"llm_error:{llm_result.error}",
             )
         elif llm_result.payload is None:
@@ -63,6 +65,7 @@ def resolve_model_output(
                 model=llm_result.model,
                 llm_latency_ms=llm_result.latency_ms,
                 token_usage=llm_result.token_usage,
+                redaction_occurred=llm_result.redaction_occurred,
                 fallback_reason="llm_empty_payload",
             )
         else:
@@ -79,6 +82,7 @@ def resolve_model_output(
                     model=llm_result.model,
                     llm_latency_ms=llm_result.latency_ms,
                     token_usage=llm_result.token_usage,
+                    redaction_occurred=llm_result.redaction_occurred,
                 )
             logger.warning("%s llm validation fallback: %s", stage_name, llm_validation["errors"])
             return ModelResolution(
@@ -88,6 +92,7 @@ def resolve_model_output(
                 model=llm_result.model,
                 llm_latency_ms=llm_result.latency_ms,
                 token_usage=llm_result.token_usage,
+                redaction_occurred=llm_result.redaction_occurred,
                 fallback_reason="llm_validation_failed",
             )
 

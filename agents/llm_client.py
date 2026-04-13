@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -31,6 +32,7 @@ class LLMResult:
     model: str
     error: str | None
     token_usage: dict[str, int] | None
+    redaction_occurred: bool | None = None
 
 
 def generate_json(request: LLMRequest) -> LLMResult:
@@ -53,6 +55,7 @@ def generate_json(request: LLMRequest) -> LLMResult:
             model=request.model,
             error="provider_error",
             token_usage=None,
+            redaction_occurred=None,
         )
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
@@ -65,6 +68,7 @@ def generate_json(request: LLMRequest) -> LLMResult:
             model=request.model,
             error="provider_error",
             token_usage=None,
+            redaction_occurred=None,
         )
 
     model = (
@@ -85,6 +89,13 @@ def generate_json(request: LLMRequest) -> LLMResult:
     started_at = time.perf_counter()
     last_raw_text = ""
     last_error_code: str = "provider_error"
+    redaction_enabled = _bool_env("MAWI_LLM_REDACTION_ENABLED", default=True)
+    redact_names = _bool_env("MAWI_LLM_REDACT_NAMES", default=False)
+    outbound_prompt, redaction_occurred = redact_prompt_text(
+        request.prompt,
+        redact_names=redact_names,
+        enabled=redaction_enabled,
+    )
 
     for attempt in range(max_retries + 1):
         try:
@@ -93,7 +104,7 @@ def generate_json(request: LLMRequest) -> LLMResult:
                 base_url=base_url,
                 model=model,
                 temperature=temperature,
-                prompt=request.prompt,
+                prompt=outbound_prompt,
                 required_fields=request.required_fields,
                 timeout_sec=timeout_sec,
             )
@@ -106,7 +117,7 @@ def generate_json(request: LLMRequest) -> LLMResult:
                 if attempt < max_retries:
                     _sleep_before_retry(backoff_sec, attempt)
                     continue
-                return _result(last_raw_text, None, started_at, provider, model, "invalid_json", None)
+                return _result(last_raw_text, None, started_at, provider, model, "invalid_json", None, redaction_occurred)
 
             missing_fields = [field for field in request.required_fields if field not in payload]
             if missing_fields:
@@ -118,9 +129,19 @@ def generate_json(request: LLMRequest) -> LLMResult:
                     model=model,
                     error="missing_required_fields",
                     token_usage=_extract_token_usage(response_json),
+                    redaction_occurred=redaction_occurred,
                 )
 
-            return _result(raw_text, payload, started_at, provider, model, None, _extract_token_usage(response_json))
+            return _result(
+                raw_text,
+                payload,
+                started_at,
+                provider,
+                model,
+                None,
+                _extract_token_usage(response_json),
+                redaction_occurred,
+            )
 
         except TimeoutError as exc:
             last_raw_text = str(exc)
@@ -128,7 +149,7 @@ def generate_json(request: LLMRequest) -> LLMResult:
             if attempt < max_retries:
                 _sleep_before_retry(backoff_sec, attempt)
                 continue
-            return _result(last_raw_text, None, started_at, provider, model, "timeout", None)
+            return _result(last_raw_text, None, started_at, provider, model, "timeout", None, redaction_occurred)
 
         except _RetryableProviderError as exc:
             last_raw_text = str(exc)
@@ -136,12 +157,30 @@ def generate_json(request: LLMRequest) -> LLMResult:
             if attempt < max_retries:
                 _sleep_before_retry(backoff_sec, attempt)
                 continue
-            return _result(last_raw_text, None, started_at, provider, model, "provider_error", None)
+            return _result(last_raw_text, None, started_at, provider, model, "provider_error", None, redaction_occurred)
 
         except Exception as exc:  # Defensive catch to ensure structured errors.
-            return _result(str(exc), None, started_at, provider, model, "provider_error", None)
+            return _result(str(exc), None, started_at, provider, model, "provider_error", None, redaction_occurred)
 
-    return _result(last_raw_text, None, started_at, provider, model, last_error_code, None)
+    return _result(last_raw_text, None, started_at, provider, model, last_error_code, None, redaction_occurred)
+
+
+_EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
+_LONG_NUMERIC_ID_PATTERN = re.compile(r"\b\d{8,}\b")
+_PHONE_TOKEN_PATTERN = re.compile(r"(?<!\w)(?:\+?\d[\d().\-\s]{7,}\d)(?!\w)")
+_NAME_PATTERN = re.compile(r"\b([A-Z][a-z]{1,})(?:\s+([A-Z][a-z]{1,}))+")
+
+
+def redact_prompt_text(prompt: str, *, redact_names: bool = False, enabled: bool = True) -> tuple[str, bool]:
+    if not enabled or not prompt:
+        return prompt, False
+    redacted = prompt
+    redacted = _EMAIL_PATTERN.sub("<redacted_email>", redacted)
+    redacted = _LONG_NUMERIC_ID_PATTERN.sub("<redacted_numeric_id>", redacted)
+    redacted = _PHONE_TOKEN_PATTERN.sub("<redacted_phone>", redacted)
+    if redact_names:
+        redacted = _NAME_PATTERN.sub("<redacted_name>", redacted)
+    return redacted, redacted != prompt
 
 
 class _RetryableProviderError(Exception):
@@ -266,6 +305,7 @@ def _result(
     model: str,
     error: str | None,
     token_usage: dict[str, int] | None,
+    redaction_occurred: bool | None,
 ) -> LLMResult:
     latency_ms = int((time.perf_counter() - started_at) * 1000)
     return LLMResult(
@@ -276,6 +316,7 @@ def _result(
         model=model,
         error=error,
         token_usage=token_usage,
+        redaction_occurred=redaction_occurred,
     )
 
 
@@ -289,3 +330,10 @@ def _extract_token_usage(response_json: dict[str, Any]) -> dict[str, int] | None
         if isinstance(value, int):
             normalized[key] = value
     return normalized or None
+
+
+def _bool_env(name: str, *, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}

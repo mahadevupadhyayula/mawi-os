@@ -196,6 +196,7 @@ def crm_agent(
         model=resolution.model,
         llm_latency_ms=resolution.llm_latency_ms,
         token_usage=resolution.token_usage,
+        redaction_occurred=resolution.redaction_occurred,
         fallback_reason=resolution.fallback_reason,
     )
     validation = validate_model_output_json(

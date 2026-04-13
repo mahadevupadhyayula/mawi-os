@@ -34,6 +34,7 @@ class PromptDiagnosticsRepository:
         model: str | None = None,
         llm_latency_ms: int | None = None,
         token_usage_json: str | None = None,
+        redaction_occurred: bool | None = None,
         fallback_reason: str | None = None,
     ) -> None:
         now = datetime.now(timezone.utc).isoformat()
@@ -58,9 +59,10 @@ class PromptDiagnosticsRepository:
                     model,
                     llm_latency_ms,
                     token_usage_json,
+                    redaction_occurred,
                     fallback_reason,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -80,6 +82,7 @@ class PromptDiagnosticsRepository:
                     model,
                     llm_latency_ms,
                     token_usage_json,
+                    (1 if redaction_occurred else 0) if redaction_occurred is not None else None,
                     fallback_reason,
                     now,
                 ),
@@ -110,6 +113,7 @@ class PromptDiagnosticsRepository:
         model: str | None = None,
         llm_latency_ms: int | None = None,
         token_usage: dict[str, int] | None = None,
+        redaction_occurred: bool | None = None,
         fallback_reason: str | None = None,
     ) -> None:
         token_usage_json = json.dumps(token_usage, sort_keys=True) if token_usage is not None else None
@@ -123,6 +127,7 @@ class PromptDiagnosticsRepository:
                     model = COALESCE(?, model),
                     llm_latency_ms = COALESCE(?, llm_latency_ms),
                     token_usage_json = COALESCE(?, token_usage_json),
+                    redaction_occurred = COALESCE(?, redaction_occurred),
                     fallback_reason = COALESCE(?, fallback_reason)
                 WHERE id = (
                     SELECT id
@@ -138,6 +143,7 @@ class PromptDiagnosticsRepository:
                     model,
                     llm_latency_ms,
                     token_usage_json,
+                    (1 if redaction_occurred else 0) if redaction_occurred is not None else None,
                     fallback_reason,
                     run_id,
                     agent_id,
