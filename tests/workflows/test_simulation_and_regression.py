@@ -18,6 +18,15 @@ from workflows.registry import get_registered_workflow_names
     ],
 )
 def test_regression_existing_workflows_keep_stage_behavior(reset_db, monkeypatch, payload: dict[str, Any], expected_stage: str) -> None:
+    monkeypatch.setenv("MAWI_LLM_ENABLED", "false")
+    llm_calls = {"count": 0}
+
+    def _should_not_call_llm(_request):
+        llm_calls["count"] += 1
+        raise AssertionError("LLM client should not be called when MAWI_LLM_ENABLED=false")
+
+    monkeypatch.setattr("agents.llm_client.generate_json", _should_not_call_llm)
+
     deal_id = "deal-regression-workflow"
     base = {
         "deal_id": deal_id,
@@ -36,6 +45,7 @@ def test_regression_existing_workflows_keep_stage_behavior(reset_db, monkeypatch
     state = api.start_workflow(deal_id, workflow_name=workflow_name)
 
     assert state["meta"]["workflow_stage"] == expected_stage
+    assert llm_calls["count"] == 0
 
 
 def test_regression_existing_endpoint_contracts_remain_stable(reset_db, monkeypatch) -> None:

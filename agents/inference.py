@@ -6,7 +6,7 @@ import json
 import logging
 from dataclasses import dataclass
 
-from agents.llm_client import LLMRequest, generate_json
+from agents import llm_client
 from agents.prompt_templates import validate_model_output_json
 
 
@@ -33,8 +33,8 @@ def resolve_model_output(
     logger: logging.Logger,
 ) -> ModelResolution:
     if llm_enabled:
-        llm_result = generate_json(
-            LLMRequest(
+        llm_result = llm_client.generate_json(
+            llm_client.LLMRequest(
                 prompt=prompt_text,
                 required_fields=required_fields,
                 model=model,
