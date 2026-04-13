@@ -18,6 +18,8 @@ class LLMRequest:
     model: str
     temperature: float = 0.0
     timeout_sec: float = 30.0
+    max_retries: int | None = None
+    retry_backoff_sec: float | None = None
 
 
 @dataclass(frozen=True)
@@ -72,8 +74,12 @@ def generate_json(request: LLMRequest) -> LLMResult:
     )
     temperature = _float_env("MAWI_LLM_TEMPERATURE", request.temperature)
     timeout_sec = _float_env("MAWI_LLM_TIMEOUT_SEC", request.timeout_sec)
-    max_retries = _int_env("MAWI_LLM_MAX_RETRIES", 2)
-    backoff_sec = _float_env("MAWI_LLM_RETRY_BACKOFF_SEC", 0.6)
+    max_retries = request.max_retries
+    if max_retries is None:
+        max_retries = _int_env("MAWI_LLM_MAX_RETRIES", 2)
+    backoff_sec = request.retry_backoff_sec
+    if backoff_sec is None:
+        backoff_sec = _float_env("MAWI_LLM_RETRY_BACKOFF_SEC", 0.6)
     base_url = os.getenv("MAWI_LLM_BASE_URL", "https://api.openai.com").rstrip("/")
 
     started_at = time.perf_counter()
