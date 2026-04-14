@@ -473,6 +473,40 @@ MAWI includes a thin web transport adapter in `api/router.py` that maps directly
 
 Base router prefix: `/api`
 
+#### Mutation Endpoint Authentication
+
+Mutation endpoints (write/execute operations) now require bearer auth by default, including:
+
+- `POST /api/workflows/start`
+- `POST /api/actions/approve`
+- `POST /api/actions/reject`
+- `POST /api/actions/edit`
+- `POST /api/workflows/intervention/run`
+- `POST /api/workflows/crm-sync/run`
+
+Use these environment variables:
+
+```bash
+# Default: protected mode (recommended for shared/hosted demos)
+export MAWI_API_AUTH_MODE="protected"
+export MAWI_API_BEARER_TOKEN="replace-with-a-strong-token"
+```
+
+Send requests with:
+
+```http
+Authorization: Bearer <your-token>
+```
+
+For local development only, you can explicitly bypass auth:
+
+```bash
+export MAWI_API_AUTH_MODE="local-dev-no-auth"
+export MAWI_API_ENABLE_DEV_MODE="true"
+```
+
+The bypass requires both variables so auth is not disabled accidentally in shared environments.
+
 #### Error Model
 
 When a workflow, action, or deal state cannot be resolved, endpoints return a consistent JSON error payload:
@@ -669,11 +703,18 @@ Template:
   - **Action required:** what downstream callers must update.
   - **Compatibility:** backward-compatible or breaking.
 
+- **2026-04-14** — `api/router.py`
+  - **Change:** mutation endpoints now enforce bearer-token authentication by default.
+  - **Action required:** set `MAWI_API_BEARER_TOKEN` and send `Authorization: Bearer <token>` for protected deployments; for local-only demos, explicitly set `MAWI_API_AUTH_MODE=local-dev-no-auth` and `MAWI_API_ENABLE_DEV_MODE=true`.
+  - **Compatibility:** backward-compatible for local dev with explicit bypass; behavior change for unprotected hosted endpoints.
+
 ---
 
 ## 🧾 Compatibility Changelog
 
 Track only compatibility-impacting behavior here (API signatures, persisted schema contracts, lifecycle status semantics, or workflow stage contract changes).
+
+- **2026-04-14** — API mutation auth defaults to bearer-token protection with explicit local-dev bypass toggle (`MAWI_API_AUTH_MODE` + `MAWI_API_ENABLE_DEV_MODE`).
 
 - **2026-04-11** — Documentation policy added for:
   - immediate `Implemented Workflows` updates once a workflow meets full criteria;

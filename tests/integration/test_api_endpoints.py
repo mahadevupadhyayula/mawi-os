@@ -29,6 +29,8 @@ def _seed_payload(deal_id: str) -> dict[str, Any]:
 
 @pytest.fixture
 def api_client_and_service(reset_db, monkeypatch):
+    monkeypatch.setenv("MAWI_API_AUTH_MODE", "local-dev-no-auth")
+    monkeypatch.setenv("MAWI_API_ENABLE_DEV_MODE", "true")
     deal_payload = _seed_payload("deal-api-001")
     monkeypatch.setattr("orchestrator.runner.fetch_deal_data", lambda _deal_id: dict(deal_payload))
 
@@ -328,3 +330,35 @@ def test_start_workflow_llm_enabled_happy_path_with_mocked_client(api_client_and
     assert payload["meta"]["workflow_stage"] == "waiting_approval"
     assert payload["deal_context"]["persona"] == "RevOps"
     assert payload["signal_context"]["urgency"] == "high"
+
+
+def test_mutation_auth_requires_bearer_token_when_protected(reset_db, monkeypatch) -> None:
+    monkeypatch.setenv("MAWI_API_AUTH_MODE", "protected")
+    monkeypatch.setenv("MAWI_API_BEARER_TOKEN", "secret-token")
+    deal_payload = _seed_payload("deal-api-001")
+    monkeypatch.setattr("orchestrator.runner.fetch_deal_data", lambda _deal_id: dict(deal_payload))
+
+    service = WorkflowAPI(orchestrator=WorkflowOrchestrator(approval_threshold=0.99))
+    app = create_web_app()
+    app.dependency_overrides[get_service] = lambda: service
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        missing = client.post("/api/workflows/start", json={"deal_id": "deal-api-001"})
+        assert missing.status_code == 401
+
+        bad = client.post(
+            "/api/workflows/start",
+            json={"deal_id": "deal-api-001"},
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+        assert bad.status_code == 401
+
+        ok = client.post(
+            "/api/workflows/start",
+            json={"deal_id": "deal-api-001"},
+            headers={"Authorization": "Bearer secret-token"},
+        )
+        assert ok.status_code == 200
+
+    app.dependency_overrides.clear()
