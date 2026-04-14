@@ -379,6 +379,17 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
+### Install dependencies
+
+From a clean checkout, install runtime dependencies (and optional test tooling) with:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -e .
+# Optional: install test/dev extras
+python -m pip install -e .[dev]
+```
+
 #### Required for live LLM mode
 
 ```bash
