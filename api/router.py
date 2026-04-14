@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 
 from api.schemas import (
@@ -53,6 +54,49 @@ def _error_response(status_code: int, error: str, message: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content=ErrorResponse(error=error, message=message).model_dump())
 
 
+
+def _is_true(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def require_mutation_auth(authorization: str | None = Header(default=None)) -> None:
+    auth_mode = os.getenv("MAWI_API_AUTH_MODE", "protected").strip().lower()
+    if auth_mode == "local-dev-no-auth":
+        if not _is_true(os.getenv("MAWI_API_ENABLE_DEV_MODE")):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "MAWI_API_AUTH_MODE=local-dev-no-auth requires MAWI_API_ENABLE_DEV_MODE=true "
+                    "to avoid accidental auth bypass."
+                ),
+            )
+        return
+
+    expected_token = os.getenv("MAWI_API_BEARER_TOKEN", "").strip()
+    if not expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MAWI_API_BEARER_TOKEN is required when mutation auth is enabled.",
+        )
+
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or token != expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid bearer token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
 def _resolve_workflow_name(workflow: str) -> str:
     resolved = _WORKFLOW_ALIASES.get(workflow, workflow)
     if not is_known_workflow(resolved):
@@ -70,6 +114,7 @@ def start_workflow(
     payload: StartWorkflowRequest,
     workflow: str = Query(default="deal-followup", description="Workflow id or alias"),
     service: WorkflowAPI = Depends(get_service),
+    _: None = Depends(require_mutation_auth),
 ) -> dict[str, Any] | JSONResponse:
     try:
         selected_workflow = _resolve_workflow_name(workflow)
@@ -103,6 +148,7 @@ def get_actions(
 def approve_action(
     payload: ApproveActionRequest,
     service: WorkflowAPI = Depends(get_service),
+    _: None = Depends(require_mutation_auth),
 ) -> dict[str, str | None] | JSONResponse:
     try:
         _ = _resolve_workflow_name(payload.workflow)
@@ -128,6 +174,7 @@ def approve_action(
 def reject_action(
     payload: RejectActionRequest,
     service: WorkflowAPI = Depends(get_service),
+    _: None = Depends(require_mutation_auth),
 ) -> dict[str, str | None] | JSONResponse:
     try:
         _ = _resolve_workflow_name(payload.workflow)
@@ -148,6 +195,7 @@ def reject_action(
 def edit_action(
     payload: EditActionRequest,
     service: WorkflowAPI = Depends(get_service),
+    _: None = Depends(require_mutation_auth),
 ) -> dict[str, str | None] | JSONResponse:
     try:
         _ = _resolve_workflow_name(payload.workflow)
@@ -214,6 +262,7 @@ def get_prompt_diagnostics(
 def run_intervention_workflow(
     payload: InterventionRunRequest,
     service: WorkflowAPI = Depends(get_service),
+    _: None = Depends(require_mutation_auth),
 ) -> dict[str, str | None]:
     return service.run_intervention_workflow(payload.deal_id)
 
@@ -226,6 +275,7 @@ def run_intervention_workflow(
 def run_crm_sync_workflow(
     payload: CRMSyncRunRequest,
     service: WorkflowAPI = Depends(get_service),
+    _: None = Depends(require_mutation_auth),
 ) -> dict[str, str | None]:
     return service.run_crm_sync_workflow(payload.deal_id)
 
