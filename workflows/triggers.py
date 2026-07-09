@@ -12,6 +12,7 @@ from __future__ import annotations
 def should_trigger_deal_followup(raw_data: dict) -> bool:
     return int(raw_data.get("days_since_reply", 0)) >= 5
 
+
 NEW_DEAL_OUTBOUND_MARKERS = (
     "has_prior_outbound",
     "outbound_count",
@@ -37,6 +38,7 @@ def should_trigger_new_deal_outreach(raw_data: dict) -> bool:
             return False
 
     return True
+
 
 RISK_SCORE_TIERS = {
     "low": 0,
@@ -69,7 +71,6 @@ def should_trigger_deal_intervention(raw_data: dict) -> bool:
     risk_score = int(raw_data.get("risk_score", 0) or 0)
     inferred_tier = _risk_tier_from_score(risk_score)
     return inferred_tier in {"high", "critical"}
-
 
 
 CRM_SYNC_POST_ACTION_EVENTS = {
@@ -113,3 +114,40 @@ def should_trigger_crm_sync(raw_data: dict) -> bool:
         return has_execution_reference or _crm_sync_required(raw_data)
 
     return False
+
+
+PRE_CRM_RESEARCH_TRIGGER_EVENTS = {
+    "pre_crm_research",
+    "lead_research",
+    "company_intake",
+    "manual_pre_crm",
+}
+
+
+def should_trigger_pre_crm_research(raw_data: dict) -> bool:
+    """Return true when a lead/company should enter the pre-CRM research workflow."""
+
+    workflow_id = str(raw_data.get("workflow_id", "")).strip().lower()
+    if workflow_id == "pre_crm_research_workflow":
+        return True
+
+    trigger_event = str(raw_data.get("trigger_event", "")).strip().lower()
+    if trigger_event in PRE_CRM_RESEARCH_TRIGGER_EVENTS:
+        return True
+
+    if bool(raw_data.get("pre_crm_research_required")):
+        return True
+
+    has_company_identity = bool(
+        raw_data.get("company_name")
+        or raw_data.get("website_url")
+        or raw_data.get("linkedin_company_url")
+    )
+    has_intake_signal = bool(
+        raw_data.get("icp_context")
+        or raw_data.get("target_geography")
+        or raw_data.get("outreach_goal")
+        or raw_data.get("notes_from_user")
+    )
+
+    return has_company_identity and has_intake_signal

@@ -26,11 +26,16 @@ from workflows.new_deal_outreach_workflow import (
     WORKFLOW_NAME as NEW_DEAL_WORKFLOW_NAME,
     WORKFLOW_STEPS as NEW_DEAL_WORKFLOW_STEPS,
 )
+from workflows.pre_crm_research_workflow import (
+    WORKFLOW_NAME as PRE_CRM_RESEARCH_WORKFLOW_NAME,
+    WORKFLOW_STEPS as PRE_CRM_RESEARCH_WORKFLOW_STEPS,
+)
 from workflows.triggers import (
     should_trigger_crm_sync,
     should_trigger_deal_followup,
     should_trigger_deal_intervention,
     should_trigger_new_deal_outreach,
+    should_trigger_pre_crm_research,
 )
 
 
@@ -95,6 +100,22 @@ WORKFLOW_REGISTRY: dict[str, WorkflowMetadata] = {
                 "default": "critical",
                 "autonomous": "medium",
                 "human_review": "critical",
+            },
+        },
+    ),
+    PRE_CRM_RESEARCH_WORKFLOW_NAME: WorkflowMetadata(
+        workflow_id=PRE_CRM_RESEARCH_WORKFLOW_NAME,
+        steps=PRE_CRM_RESEARCH_WORKFLOW_STEPS,
+        trigger=should_trigger_pre_crm_research,
+        config={
+            "release_version": "2026.07.1",
+            "implementation_status": "partial",
+            "workflow_type": "pre_crm_research",
+            "requires_human_approval_before_crm": True,
+            "max_risk_tier_by_phase": {
+                "default": "medium",
+                "autonomous": "low",
+                "human_review": "medium",
             },
         },
     ),

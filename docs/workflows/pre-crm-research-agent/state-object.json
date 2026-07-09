@@ -1,0 +1,27 @@
+{
+  "workflow_name": "MAWI ICP Qualification & Account Intake Workflow",
+  "workflow_id": "pre_crm_research_workflow",
+  "workflow_run_id": "",
+  "state_version": "1.0",
+  "company_input": {
+    "company_name": "",
+    "website_url": "",
+    "linkedin_company_url": "",
+    "additional_public_sources": [],
+    "target_geography": "",
+    "contact_name": "",
+    "contact_title": "",
+    "contact_linkedin_url": "",
+    "notes_from_user": "",
+    "outreach_goal": ""
+  },
+  "icp_context": {},
+  "company_research_notes": {},
+  "company_signal_context": {},
+  "pre_crm_evaluation": {},
+  "human_review": {},
+  "crm_payload": {},
+  "outreach_task": {},
+  "learning_update": {},
+  "state_log": []
+}
