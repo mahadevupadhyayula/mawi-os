@@ -1,0 +1,39 @@
+{
+  "scenario_id": "llm-fallback",
+  "description": "Fictional stalled deal with an injected invalid-JSON LLM failure and deterministic fallback.",
+  "workflow_id": "deal_followup_workflow",
+  "deal": {
+    "deal_id": "demo-fallback-copper-tree",
+    "account": "Copper Tree Systems (Fictional)",
+    "contact_name": "Taylor Example",
+    "persona": "VP Sales",
+    "deal_stage": "proposal",
+    "days_since_reply": 8,
+    "last_touch_summary": "Shared fictional rollout assumptions and received no reply.",
+    "known_objections": ["budget timing", "implementation effort"],
+    "last_updated": "2026-07-03T12:00:00+00:00"
+  },
+  "approval": {
+    "decision": "approve",
+    "actor": "demo-reviewer",
+    "reply_received": false,
+    "meeting_booked": false
+  },
+  "llm_simulation": {
+    "enabled": true,
+    "failure_stage": "signal_agent",
+    "failure_type": "invalid_json",
+    "raw_response": "this is not json",
+    "network_calls": 0
+  },
+  "expected": {
+    "initial_stage": "waiting_approval",
+    "fallback_reason": "llm_error:invalid_json",
+    "deterministic_signal": {
+      "stalled": true,
+      "days_since_reply": 8,
+      "urgency": "medium",
+      "trigger_reason": "no_reply_5_days"
+    }
+  }
+}
