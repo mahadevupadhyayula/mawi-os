@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MAWI Operator Demo</title>
+  <link rel="stylesheet" href="/demo/static/demo.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">Portfolio demo</p>
+      <h1>MAWI Workflow Operator</h1>
+      <p>Run and review one fictional deal workflow. All email and CRM execution is simulated.</p>
+    </div>
+    <span class="mode">Runtime: <strong id="runtime-mode">Deterministic</strong></span>
+  </header>
+
+  <main>
+    <section aria-labelledby="scenario-title">
+      <div class="section-heading"><div><p class="step">01 / Scenario</p><h2 id="scenario-title">Choose a workflow story</h2></div></div>
+      <div class="controls">
+        <label>Scenario<select id="scenario-select" aria-describedby="scenario-description"><option>Loading scenarios…</option></select></label>
+        <button id="start-button" type="button">Start workflow</button>
+        <button id="reset-button" class="secondary" type="button">Reset demo</button>
+      </div>
+      <p id="scenario-description" class="description">Loading demo scenarios…</p>
+      <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+    </section>
+
+    <section aria-labelledby="summary-title">
+      <div class="section-heading"><div><p class="step">02 / Run</p><h2 id="summary-title">Workflow summary</h2></div><span id="status-pill" class="pill muted">Not started</span></div>
+      <dl id="workflow-summary" class="summary-grid"><div><dt>Deal ID</dt><dd>—</dd></div><div><dt>Workflow ID</dt><dd>—</dd></div><div><dt>Trigger</dt><dd>—</dd></div><div><dt>Urgency</dt><dd>—</dd></div><div><dt>Current stage</dt><dd>—</dd></div><div><dt>Current status</dt><dd>—</dd></div><div><dt>Confidence</dt><dd>—</dd></div><div><dt>Approval state</dt><dd>—</dd></div></dl>
+    </section>
+
+    <section aria-labelledby="timeline-title">
+      <div class="section-heading"><div><p class="step">03 / Progress</p><h2 id="timeline-title">Workflow timeline</h2></div></div>
+      <div id="timeline" class="timeline"><p class="empty">Start a scenario to inspect its stages.</p></div>
+    </section>
+
+    <section id="approval-panel" class="hidden" aria-labelledby="approval-title">
+      <div class="section-heading"><div><p class="step">04 / Human review</p><h2 id="approval-title">Approval required</h2></div><span class="pill warning">Awaiting reviewer</span></div>
+      <p id="approval-reason" class="callout"></p>
+      <div class="approval-fields">
+        <label>Proposed subject<input id="action-subject" type="text" readonly></label>
+        <label>Proposed body<textarea id="action-body" rows="7"></textarea></label>
+      </div>
+      <p>Confidence: <strong id="action-confidence">—</strong></p>
+      <div class="button-row"><button id="approve-button" type="button">Approve &amp; simulate execution</button><button id="edit-button" class="secondary" type="button">Save body edit</button></div>
+      <div class="reject-row"><label>Rejection reason<input id="rejection-reason" type="text" placeholder="Reason is required"></label><button id="reject-button" class="danger" type="button">Reject</button></div>
+    </section>
+
+    <section aria-labelledby="outcome-title">
+      <div class="section-heading"><div><p class="step">05 / Result</p><h2 id="outcome-title">Outcome</h2></div><span class="simulated">Simulated tools only</span></div>
+      <div id="outcome" class="outcome-grid"><p class="empty">Execution results will appear here after approval.</p></div>
+      <details><summary>Raw run data</summary><pre id="raw-data">No run data loaded.</pre></details>
+    </section>
+  </main>
+  <footer>MAWI portfolio demonstration · Fictional records · No external customer systems connected</footer>
+  <script src="/demo/static/demo.js" defer></script>
+</body>
+</html>
