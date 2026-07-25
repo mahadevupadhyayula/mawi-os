@@ -38,8 +38,13 @@
       <div id="timeline" class="timeline"><p class="empty">Start a scenario to inspect its stages.</p></div>
     </section>
 
+    <section aria-labelledby="telemetry-title">
+      <div class="section-heading"><div><p class="step">04 / Evidence</p><h2 id="telemetry-title">Run telemetry</h2></div><span class="pill muted">Persisted evidence</span></div>
+      <div id="telemetry" class="telemetry"><p class="empty">Start a scenario to inspect runtime evidence.</p></div>
+    </section>
+
     <section id="approval-panel" class="hidden" aria-labelledby="approval-title">
-      <div class="section-heading"><div><p class="step">04 / Human review</p><h2 id="approval-title">Approval required</h2></div><span class="pill warning">Awaiting reviewer</span></div>
+      <div class="section-heading"><div><p class="step">05 / Human review</p><h2 id="approval-title">Approval required</h2></div><span class="pill warning">Awaiting reviewer</span></div>
       <p id="approval-reason" class="callout"></p>
       <div class="approval-fields">
         <label>Proposed subject<input id="action-subject" type="text" readonly></label>
@@ -51,7 +56,7 @@
     </section>
 
     <section aria-labelledby="outcome-title">
-      <div class="section-heading"><div><p class="step">05 / Result</p><h2 id="outcome-title">Outcome</h2></div><span class="simulated">Simulated tools only</span></div>
+      <div class="section-heading"><div><p class="step">06 / Result</p><h2 id="outcome-title">Outcome</h2></div><span class="simulated">Simulated tools only</span></div>
       <div id="outcome" class="outcome-grid"><p class="empty">Execution results will appear here after approval.</p></div>
       <details><summary>Raw run data</summary><pre id="raw-data">No run data loaded.</pre></details>
     </section>

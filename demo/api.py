@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from api.service import WorkflowAPI
@@ -14,6 +15,21 @@ _SCENARIO_TITLES = {
     "rejected-action": "Rejected follow-up action",
     "llm-fallback": "Deterministic LLM fallback",
 }
+
+
+def _duration_ms(started_at: str | None, ended_at: str | None) -> int | None:
+    """Return a persisted wall-clock duration without inventing missing evidence."""
+    if not started_at or not ended_at:
+        return None
+    try:
+        elapsed = datetime.fromisoformat(ended_at) - datetime.fromisoformat(started_at)
+        return max(0, int(elapsed.total_seconds() * 1000))
+    except (TypeError, ValueError):
+        return None
+
+
+def _unique_values(rows: list[dict[str, Any]], key: str) -> list[str]:
+    return list(dict.fromkeys(str(row[key]) for row in rows if row.get(key)))
 
 
 class DemoAPI:
@@ -147,36 +163,110 @@ class DemoAPI:
         run = self._require_demo_run(run_id)
         with self.db.tx() as conn:
             action = conn.execute(
-                "SELECT status FROM actions WHERE run_id=? ORDER BY created_at DESC LIMIT 1", (run_id,)
-            ).fetchone()
-            prompt = conn.execute(
                 """
-                SELECT MAX(COALESCE(llm_enabled, 0)) AS llm_enabled,
-                       MAX(CASE WHEN fallback_reason IS NOT NULL AND fallback_reason != 'llm_disabled' THEN 1 ELSE 0 END) AS fallback
-                FROM prompt_runs WHERE run_id=?
+                SELECT status, approved_by, rejected_by, rejection_reason
+                FROM actions WHERE run_id=? ORDER BY created_at DESC LIMIT 1
                 """,
                 (run_id,),
             ).fetchone()
+            prompt_rows = conn.execute(
+                """
+                SELECT agent_id, latency_ms, status, error_type, fallback_used,
+                       llm_enabled, provider, model, fallback_reason
+                FROM prompt_runs WHERE run_id=? ORDER BY id ASC
+                """,
+                (run_id,),
+            ).fetchall()
             retries = conn.execute(
                 "SELECT COALESCE(SUM(retry_count), 0) AS count FROM action_steps WHERE run_id=?", (run_id,)
             ).fetchone()
             execution = conn.execute(
-                "SELECT tool_events_json FROM execution_logs WHERE run_id=? ORDER BY executed_at DESC LIMIT 1", (run_id,)
+                """
+                SELECT status, tool_events_json, error_code
+                FROM execution_logs WHERE run_id=? ORDER BY executed_at DESC LIMIT 1
+                """,
+                (run_id,),
             ).fetchone()
             outcome = conn.execute(
                 "SELECT outcome_label FROM outcomes WHERE run_id=? ORDER BY created_at DESC LIMIT 1", (run_id,)
             ).fetchone()
+            envelope = conn.execute(
+                "SELECT envelope_json FROM context_envelopes WHERE run_id=? ORDER BY created_at DESC, id DESC LIMIT 1",
+                (run_id,),
+            ).fetchone()
+            envelope_rows = conn.execute(
+                """
+                SELECT stage, source_agent, created_at
+                FROM context_envelopes WHERE run_id=? ORDER BY created_at ASC, id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+        prompts = [dict(row) for row in prompt_rows]
+        fallback_reasons = [
+            value for value in _unique_values(prompts, "fallback_reason") if value != "llm_disabled"
+        ]
         tool_events = json.loads(execution["tool_events_json"]) if execution else []
+        latest_envelope = json.loads(envelope["envelope_json"]) if envelope else {}
+        decision = latest_envelope.get("decision_context") or {}
+        last_error = None
+        if run.get("last_error"):
+            try:
+                last_error = json.loads(str(run["last_error"]))
+            except (TypeError, ValueError):
+                last_error = {"error_class": str(run["last_error"])}
+        error_classes = _unique_values(prompts, "error_type")
+        if execution and execution["error_code"]:
+            error_classes.append(str(execution["error_code"]))
+        if last_error and last_error.get("error_class"):
+            error_classes.append(str(last_error["error_class"]))
+        approval_state = str(action["status"]) if action else "not_required"
+        if prompts:
+            stage_runs = [
+                {
+                    "stage": str(row["agent_id"]),
+                    "duration_ms": int(row["latency_ms"]),
+                    "status": str(row["status"]),
+                    "error_class": row["error_type"],
+                }
+                for row in prompts
+            ]
+        else:
+            persisted_stages = [dict(row) for row in envelope_rows]
+            stage_runs = []
+            for index, row in enumerate(persisted_stages):
+                prior = persisted_stages[index - 1]["created_at"] if index else run["started_at"]
+                stage_runs.append(
+                    {
+                        "stage": str(row["source_agent"] or row["stage"]),
+                        "duration_ms": _duration_ms(str(prior), str(row["created_at"])),
+                        "status": "completed",
+                        "error_class": None,
+                    }
+                )
         return {
             "workflow_id": str(run["workflow_name"]),
             "current_status": str(run["run_status"]),
             "current_stage": str(run["current_stage"]),
-            "approval_state": str(action["status"]) if action else "not_required",
-            "llm_enabled": bool(prompt["llm_enabled"]) if prompt else False,
-            "fallback_detected": bool(prompt["fallback"]) if prompt else False,
+            "workflow_duration_ms": _duration_ms(
+                str(run["started_at"]), str(run["completed_at"] or run["updated_at"])
+            ),
+            "stage_runs": stage_runs,
+            "approval_state": approval_state,
+            "approval_decision": approval_state if approval_state in {"approved", "rejected"} else None,
+            "approval_actor": (action["approved_by"] or action["rejected_by"]) if action else None,
+            "approval_reason": action["rejection_reason"] if action else None,
+            "llm_enabled": any(bool(row["llm_enabled"]) for row in prompts),
+            "providers": _unique_values(prompts, "provider"),
+            "models": _unique_values(prompts, "model"),
+            "fallback_detected": any(bool(row["fallback_used"]) for row in prompts),
+            "fallback_reasons": fallback_reasons,
             "retry_count": int(retries["count"]),
             "tool_event_count": len(tool_events),
+            "execution_status": str(execution["status"]) if execution else "not_started",
+            "error_classes": list(dict.fromkeys(error_classes)),
             "outcome_label": str(outcome["outcome_label"]) if outcome else None,
+            "memory_evidence_count": len(decision.get("memory_evidence_used") or []),
+            "memory_influence_summary": decision.get("memory_rationale") or "No memory influence recorded.",
         }
 
     def _require_demo_run(self, run_id: str) -> dict[str, Any]:
