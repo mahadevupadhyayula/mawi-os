@@ -30,6 +30,7 @@ include = [
   "approval*",
   "context*",
   "data*",
+  "demo*",
   "evaluation*",
   "memory*",
   "orchestrator*",
