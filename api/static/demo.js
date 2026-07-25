@@ -24,7 +24,9 @@ const pretty = value => JSON.stringify(value ?? {}, null, 2);
 const pct = value => typeof value === "number" ? `${Math.round(value * 100)}%` : "—";
 
 async function request(url, options = {}) {
-  const response = await fetch(url, {headers:{"Content-Type":"application/json"}, ...options});
+  const token = $("bearer-token")?.value.trim();
+  const headers = {"Content-Type":"application/json", ...(token ? {Authorization:`Bearer ${token}`} : {})};
+  const response = await fetch(url, {headers, ...options});
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.message || payload.detail || `Request failed (${response.status})`);
   return payload;

@@ -469,6 +469,37 @@ This runs the local demo workflow end-to-end, including approval/resume behavior
 
 MAWI includes a thin web transport adapter in `api/router.py` that maps directly to `WorkflowAPI` service methods in `api/service.py`.
 
+### Containerized portfolio demo
+
+The single-container demo starts FastAPI and serves the UI at `http://localhost:8000/demo`. It uses fictional scenario fixtures, deterministic agents, simulated email/CRM tools, protected mutations, and a local SQLite database by default.
+
+```bash
+cp .env.example .env
+# Edit .env and set a strong, demo-specific MAWI_API_BEARER_TOKEN.
+docker compose -f docker-compose.demo.yml up --build
+```
+
+Open the demo page and enter the same bearer token in **Demo bearer token** before starting, approving, editing, rejecting, or resetting a scenario. Read-only scenario metadata remains available without authentication. The container refuses to start when the required token is empty; the local no-auth bypass is not enabled.
+
+Safe defaults are `MAWI_LLM_ENABLED=false`, `MAWI_DEMO_MODE=true`, `MAWI_API_AUTH_MODE=protected`, and `MAWI_DB_PATH=/data/mawi.db`. `MAWI_PORT` optionally changes the host port. No real email, CRM, or customer system is contacted.
+
+The Compose command mounts the `mawi-demo-data` named volume at `/data`, so SQLite data is not written into the image layer and survives container replacement. To run without Compose, use an explicit host directory or named volume:
+
+```bash
+docker build -t mawi-demo .
+docker run --rm -p 8000:8000 -e MAWI_API_BEARER_TOKEN="replace-with-a-strong-token" -v mawi-demo-data:/data mawi-demo
+```
+
+Reset only the canonical demo records with the UI button or:
+
+```bash
+curl -X POST -H "Authorization: Bearer $MAWI_API_BEARER_TOKEN" http://localhost:8000/api/demo/reset
+```
+
+Optional LLM mode requires setting `MAWI_LLM_ENABLED=true` and `OPENAI_API_KEY` in the runtime environment. It retains approval gates and simulated tools, but makes outbound model API calls and falls back to deterministic output on provider failure. Never put a real key in an image or commit it to `.env`.
+
+Known limitations: this is a small single-process portfolio deployment with local SQLite, one shared bearer secret, no user accounts, OAuth, RBAC, rate limiting, cloud infrastructure, or real outbound tool integrations. It is not a production deployment architecture.
+
 #### Endpoint Contracts
 
 Base router prefix: `/api`
