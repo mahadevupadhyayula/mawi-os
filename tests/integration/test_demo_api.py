@@ -85,17 +85,26 @@ def test_start_and_inspect_demo_run(demo_client, scenario_id: str) -> None:
     assert [item["timestamp"] for item in timeline] == sorted(item["timestamp"] for item in timeline)
     assert [item["timestamp"] for item in audit] == sorted(item["timestamp"] for item in audit)
     assert all({"stage_name", "status", "timestamp", "summary", "source_agent"} <= set(item) for item in timeline)
-    assert telemetry == {
-        "workflow_id": "deal_followup_workflow",
-        "current_status": "waiting_approval",
-        "current_stage": "waiting_approval",
-        "approval_state": "pending_approval",
-        "llm_enabled": False,
-        "fallback_detected": False,
-        "retry_count": 0,
-        "tool_event_count": 0,
-        "outcome_label": None,
-    }
+    assert telemetry["workflow_id"] == "deal_followup_workflow"
+    assert telemetry["current_status"] == "waiting_approval"
+    assert telemetry["current_stage"] == "waiting_approval"
+    assert telemetry["approval_state"] == "pending_approval"
+    assert telemetry["approval_decision"] is None
+    assert telemetry["llm_enabled"] is False
+    assert telemetry["providers"] == []
+    assert telemetry["models"] == []
+    assert telemetry["fallback_detected"] is False
+    assert telemetry["fallback_reasons"] == []
+    assert telemetry["retry_count"] == 0
+    assert telemetry["tool_event_count"] == 0
+    assert telemetry["execution_status"] == "not_started"
+    assert telemetry["error_classes"] == []
+    assert telemetry["outcome_label"] is None
+    assert telemetry["workflow_duration_ms"] >= 0
+    assert telemetry["stage_runs"]
+    assert all({"stage", "duration_ms", "status", "error_class"} == set(item) for item in telemetry["stage_runs"])
+    assert telemetry["memory_evidence_count"] >= 0
+    assert telemetry["memory_influence_summary"]
 
 
 def test_reset_removes_only_known_demo_records(demo_client, monkeypatch) -> None:

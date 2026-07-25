@@ -65,8 +65,25 @@ function render(timeline) {
   $("workflow-summary").innerHTML = summary.map(([key,value]) => `<div><dt>${esc(key)}</dt><dd>${esc(value)}</dd></div>`).join("");
   $("status-pill").textContent = text(telemetry.current_status).replaceAll("_"," ");
   $("status-pill").className = `pill ${telemetry.current_status === "completed" ? "success" : telemetry.approval_state === "pending_approval" ? "warning" : "muted"}`;
-  renderTimeline(); renderApproval(); renderOutcome();
+  renderTimeline(); renderTelemetry(); renderApproval(); renderOutcome();
   $("raw-data").textContent = pretty({run, telemetry, timeline, deal});
+}
+function badge(value, tone = "muted") { return `<span class="pill ${tone}">${esc(value)}</span>`; }
+function renderTelemetry() {
+  const mode = telemetry.llm_enabled ? "Enabled" : "Disabled";
+  const fallback = telemetry.fallback_detected ? badge("Fallback used", "warning") : badge("No fallback", "success");
+  const rows = [
+    ["Workflow duration", telemetry.workflow_duration_ms === null ? "—" : `${telemetry.workflow_duration_ms} ms`],
+    ["LLM", `${mode}${telemetry.providers?.length ? ` · ${telemetry.providers.join(", ")}` : ""}${telemetry.models?.length ? ` · ${telemetry.models.join(", ")}` : ""}`],
+    ["Fallback", fallback, true], ["Fallback reason", telemetry.fallback_reasons?.join(", ")],
+    ["Approval decision", telemetry.approval_decision || telemetry.approval_state],
+    ["Execution", telemetry.execution_status], ["Tool events", telemetry.tool_event_count],
+    ["Retries", telemetry.retry_count], ["Error class", telemetry.error_classes?.join(", ")],
+    ["Outcome", telemetry.outcome_label], ["Memory evidence", telemetry.memory_evidence_count],
+    ["Memory influence", telemetry.memory_influence_summary]
+  ];
+  const stages = (telemetry.stage_runs || []).map(stage => `<li><strong>${esc(stage.stage.replaceAll("_"," "))}</strong><span>${esc(stage.duration_ms)} ms · ${esc(stage.status)}${stage.error_class ? ` · ${esc(stage.error_class)}` : ""}</span></li>`).join("");
+  $("telemetry").innerHTML = `<dl class="telemetry-grid">${rows.map(([key,value,raw]) => `<div><dt>${esc(key)}</dt><dd>${raw ? value : esc(value)}</dd></div>`).join("")}</dl><div class="stage-durations"><h3>Stage durations</h3>${stages ? `<ul>${stages}</ul>` : `<p class="empty">No prompt-stage timing was recorded.</p>`}</div>`;
 }
 function renderTimeline() {
   $("timeline").innerHTML = stageDefinitions.map(([name,key,defaultSummary], index) => {
