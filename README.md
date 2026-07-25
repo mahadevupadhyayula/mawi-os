@@ -66,6 +66,7 @@ The orchestrator advances typed context through registered agent stages, pauses 
 | Guide | Contents |
 | --- | --- |
 | [Architecture](docs/architecture.md) | Layers, orchestration flow, persistence, and project layout |
+| [Workflow and architecture diagrams](docs/diagrams.md) | Mermaid views of the approval-gated business flow and current technical architecture |
 | [Workflow contracts](docs/workflow-contracts.md) | Stable context/prompt contracts, workflow IDs, stages, and implementation evidence |
 | [Demo guide](docs/demo-guide.md) | Local and container setup, scenarios, and demo operation |
 | [API reference](docs/api-reference.md) | Current routes, authentication, aliases, and error model |

@@ -1,6 +1,6 @@
 # Architecture
 
-[Back to README](../README.md) · [Workflow contracts](workflow-contracts.md) · [API reference](api-reference.md)
+[Back to README](../README.md) · [Workflow and architecture diagrams](diagrams.md) · [Workflow contracts](workflow-contracts.md) · [API reference](api-reference.md)
 
 ## Design principle
 
@@ -31,6 +31,8 @@ Input -> Signal -> Context -> Strategy/CRM planning -> Action plan -> Approval -
 ```
 
 The workflow registry supplies the ordered stages. `Orchestrator` advances the context envelope, persists snapshots and run state, and pauses when an action requires approval. Approval lifecycle operations resume or terminate that existing run rather than creating a separate business workflow.
+
+See the reusable [business workflow and technical architecture diagrams](diagrams.md) for Mermaid views of this flow and its current implementation boundaries.
 
 ## Data and audit model
 
