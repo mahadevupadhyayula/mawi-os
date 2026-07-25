@@ -146,10 +146,10 @@ def test_get_deal_state_serialized_envelope_and_not_found(api_client_and_service
     payload = response.json()
     assert payload["meta"]["deal_id"] == "deal-api-001"
     assert payload["meta"]["workflow_stage"] in {"waiting_approval", "evaluation_done"}
-    assert payload["signal_context"]["meta"]["agent"] == "signal_agent"
-    assert payload["deal_context"]["meta"]["agent"] == "context_agent"
-    assert payload["decision_context"]["meta"]["agent"] == "strategist_agent"
-    assert payload["action_context"]["meta"]["agent"] == "action_agent"
+    assert payload["signal_context"]["meta"]["source_agent"] == "signal_agent"
+    assert payload["deal_context"]["meta"]["source_agent"] == "context_agent"
+    assert payload["decision_context"]["meta"]["source_agent"] == "strategist_agent"
+    assert payload["action_context"]["meta"]["source_agent"] == "action_agent"
     assert "history" in payload
     assert isinstance(payload["raw_data"], dict)
 
@@ -262,10 +262,10 @@ def test_start_workflow_contract_unchanged_with_llm_explicitly_disabled(api_clie
     payload = response.json()
     assert payload["meta"]["deal_id"] == "deal-api-001"
     assert payload["meta"]["workflow_stage"] == "waiting_approval"
-    assert payload["signal_context"]["meta"]["agent"] == "signal_agent"
-    assert payload["deal_context"]["meta"]["agent"] == "context_agent"
-    assert payload["decision_context"]["meta"]["agent"] == "strategist_agent"
-    assert payload["action_context"]["meta"]["agent"] == "action_agent"
+    assert payload["signal_context"]["meta"]["source_agent"] == "signal_agent"
+    assert payload["deal_context"]["meta"]["source_agent"] == "context_agent"
+    assert payload["decision_context"]["meta"]["source_agent"] == "strategist_agent"
+    assert payload["action_context"]["meta"]["source_agent"] == "action_agent"
 
 
 def test_start_workflow_llm_enabled_happy_path_with_mocked_client(api_client_and_service, monkeypatch) -> None:
@@ -304,7 +304,18 @@ def test_start_workflow_llm_enabled_happy_path_with_mocked_client(api_client_and
             },
             frozenset({"plan_id", "steps", "status", "reasoning", "confidence"}): {
                 "plan_id": "plan-llm-1",
-                "steps": [],
+                "steps": [
+                    {
+                        "step_id": "step-llm-1",
+                        "order": 1,
+                        "channel": "email",
+                        "action_type": "send_email",
+                        "subject": "LLM follow-up",
+                        "preview": "LLM preview",
+                        "body_draft": "LLM body",
+                        "status": "draft",
+                    }
+                ],
                 "status": "draft",
                 "reasoning": "LLM action plan",
                 "confidence": 0.86,

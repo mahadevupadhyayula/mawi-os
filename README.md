@@ -1,5 +1,7 @@
 # MAWI — Multi-Agent Workflow Intelligence
 
+[![CI](https://github.com/mahadevupadhyayula/mawi-os/actions/workflows/ci.yml/badge.svg)](https://github.com/mahadevupadhyayula/mawi-os/actions/workflows/ci.yml)
+
 > **Problem:** Business signals often become disconnected recommendations, manual handoffs, and actions with weak control or traceability.
 >
 > **Solution:** MAWI is a human-controlled AI workflow execution layer that turns business signals into structured decisions, approval-gated actions, and auditable outcomes.
