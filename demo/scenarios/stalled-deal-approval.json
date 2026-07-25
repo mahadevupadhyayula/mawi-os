@@ -1,0 +1,27 @@
+{
+  "scenario_id": "stalled-deal-approval",
+  "description": "Fictional proposal awaiting a reply and human approval before simulated follow-up.",
+  "workflow_id": "deal_followup_workflow",
+  "deal": {
+    "deal_id": "demo-stalled-aster-labs",
+    "account": "Aster Labs (Fictional)",
+    "contact_name": "Riley Example",
+    "persona": "VP Sales",
+    "deal_stage": "proposal",
+    "days_since_reply": 8,
+    "last_touch_summary": "Shared a fictional evaluation recap; no response received.",
+    "known_objections": ["budget timing", "integration risk"],
+    "last_updated": "2026-07-01T12:00:00+00:00"
+  },
+  "approval": {
+    "decision": "approve",
+    "actor": "demo-reviewer",
+    "reply_received": true,
+    "meeting_booked": false
+  },
+  "expected": {
+    "initial_stage": "waiting_approval",
+    "final_stage": "evaluation_done",
+    "execution": "simulated"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "scenario_id": "rejected-action",
+  "description": "Fictional follow-up rejected by a reviewer before any simulated tool executes.",
+  "workflow_id": "deal_followup_workflow",
+  "deal": {
+    "deal_id": "demo-rejected-northwind-orbit",
+    "account": "Northwind Orbit (Fictional)",
+    "contact_name": "Morgan Example",
+    "persona": "VP Sales",
+    "deal_stage": "proposal",
+    "days_since_reply": 9,
+    "last_touch_summary": "Sent a fictional proposal summary and paused for review.",
+    "known_objections": ["budget timing", "security review"],
+    "last_updated": "2026-07-02T12:00:00+00:00"
+  },
+  "approval": {
+    "decision": "reject",
+    "actor": "demo-reviewer",
+    "reason": "Fictional account requested no follow-up this week."
+  },
+  "expected": {
+    "initial_stage": "waiting_approval",
+    "final_stage": "waiting_approval",
+    "tool_executions": 0
+  }
+}
