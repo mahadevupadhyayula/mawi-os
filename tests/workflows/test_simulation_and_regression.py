@@ -50,6 +50,8 @@ def test_regression_existing_workflows_keep_stage_behavior(reset_db, monkeypatch
 
 def test_regression_existing_endpoint_contracts_remain_stable(reset_db, monkeypatch) -> None:
     pytest.importorskip("fastapi")
+    monkeypatch.setenv("MAWI_API_AUTH_MODE", "local-dev-no-auth")
+    monkeypatch.setenv("MAWI_API_ENABLE_DEV_MODE", "true")
     from api.app import create_web_app
     from api.router import get_service
     from fastapi.testclient import TestClient

@@ -223,7 +223,7 @@ class WorkflowAPI:
             sync_status="completed",
             request={"source": "api", "workflow_id": workflow_id},
             response={"workflow_stage": envelope.meta.workflow_stage},
-            synced_at=envelope.meta.updated_at,
+            synced_at=envelope.meta.timestamp,
         )
         return self._workflow_run_envelope(
             workflow_id=workflow_id,
