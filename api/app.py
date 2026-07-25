@@ -28,6 +28,10 @@ def create_web_app() -> FastAPI:
     static_directory = Path(__file__).with_name("static")
     app.mount("/demo/static", StaticFiles(directory=static_directory), name="demo-static")
 
+    @app.get("/health", tags=["operations"])
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
     @app.get("/demo", include_in_schema=False)
     def demo_page() -> FileResponse:
         return FileResponse(static_directory / "demo.html", media_type="text/html")

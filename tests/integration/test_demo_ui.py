@@ -25,6 +25,7 @@ def test_demo_page_and_static_assets_load(client) -> None:
     assert page.status_code == stylesheet.status_code == script.status_code == 200
     assert "MAWI Workflow Operator" in page.text
     assert "Portfolio demo" in page.text
+    assert "Demo bearer token" in page.text
     assert "simulated" in page.text.lower()
     assert stylesheet.headers["content-type"].startswith("text/css")
     assert "javascript" in script.headers["content-type"]
@@ -43,3 +44,10 @@ def test_demo_script_references_existing_demo_and_approval_routes() -> None:
 
     for route in routes:
         assert route in script
+
+
+def test_health_endpoint(client) -> None:
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

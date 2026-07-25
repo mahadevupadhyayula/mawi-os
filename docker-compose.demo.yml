@@ -1,0 +1,18 @@
+services:
+  mawi-demo:
+    build: .
+    ports:
+      - "${MAWI_PORT:-8000}:8000"
+    environment:
+      MAWI_API_BEARER_TOKEN: "${MAWI_API_BEARER_TOKEN:?set MAWI_API_BEARER_TOKEN in .env}"
+      MAWI_API_AUTH_MODE: "protected"
+      MAWI_DEMO_MODE: "true"
+      MAWI_LLM_ENABLED: "${MAWI_LLM_ENABLED:-false}"
+      MAWI_DB_PATH: "/data/mawi.db"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+    volumes:
+      - mawi-demo-data:/data
+    restart: unless-stopped
+
+volumes:
+  mawi-demo-data:
