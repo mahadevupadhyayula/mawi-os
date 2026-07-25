@@ -26,6 +26,7 @@ from api.schemas import (
     WorkflowRunEnvelopeResponse,
 )
 from api.service import WorkflowAPI
+from demo.api import DemoAPI
 from workflows.registry import is_known_workflow
 
 router = APIRouter(prefix="/api", tags=["workflow"])
@@ -94,6 +95,14 @@ def require_mutation_auth(authorization: str | None = Header(default=None)) -> N
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid bearer token.",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+def require_demo_mode() -> None:
+    if not _is_true(os.getenv("MAWI_DEMO_MODE")):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo API is disabled. Set MAWI_DEMO_MODE=true to enable it.",
         )
 
 
@@ -295,3 +304,53 @@ def get_crm_sync_status(
         return service.get_crm_sync_status(deal_id=deal_id, run_id=run_id)
     except ValueError as exc:
         return _error_response(status.HTTP_400_BAD_REQUEST, "invalid_request", str(exc))
+
+
+@router.get("/demo/scenarios", dependencies=[Depends(require_demo_mode)], tags=["demo"])
+def list_demo_scenarios(service: WorkflowAPI = Depends(get_service)) -> dict[str, Any]:
+    return {"scenarios": DemoAPI(service).list_scenarios()}
+
+
+@router.post(
+    "/demo/reset",
+    dependencies=[Depends(require_demo_mode), Depends(require_mutation_auth)],
+    tags=["demo"],
+)
+def reset_demo_data(service: WorkflowAPI = Depends(get_service)) -> dict[str, Any]:
+    return {"status": "reset", **DemoAPI(service).reset()}
+
+
+@router.post(
+    "/demo/scenarios/{scenario_id}/start",
+    response_model=None,
+    dependencies=[Depends(require_demo_mode), Depends(require_mutation_auth)],
+    tags=["demo"],
+)
+def start_demo_scenario(scenario_id: str, service: WorkflowAPI = Depends(get_service)) -> dict[str, Any] | JSONResponse:
+    try:
+        return DemoAPI(service).start_scenario(scenario_id)
+    except ValueError as exc:
+        return _error_response(status.HTTP_404_NOT_FOUND, "demo_scenario_not_found", str(exc))
+
+
+def _demo_run_response(run_id: str, operation: str, service: WorkflowAPI) -> dict[str, Any] | JSONResponse:
+    try:
+        value = getattr(DemoAPI(service), operation)(run_id)
+        return {operation: value} if operation in {"timeline", "audit"} else value
+    except ValueError as exc:
+        return _error_response(status.HTTP_404_NOT_FOUND, "demo_run_not_found", str(exc))
+
+
+@router.get("/demo/runs/{run_id}/timeline", response_model=None, dependencies=[Depends(require_demo_mode)], tags=["demo"])
+def get_demo_timeline(run_id: str, service: WorkflowAPI = Depends(get_service)) -> dict[str, Any] | JSONResponse:
+    return _demo_run_response(run_id, "timeline", service)
+
+
+@router.get("/demo/runs/{run_id}/audit", response_model=None, dependencies=[Depends(require_demo_mode)], tags=["demo"])
+def get_demo_audit(run_id: str, service: WorkflowAPI = Depends(get_service)) -> dict[str, Any] | JSONResponse:
+    return _demo_run_response(run_id, "audit", service)
+
+
+@router.get("/demo/runs/{run_id}/telemetry", response_model=None, dependencies=[Depends(require_demo_mode)], tags=["demo"])
+def get_demo_telemetry(run_id: str, service: WorkflowAPI = Depends(get_service)) -> dict[str, Any] | JSONResponse:
+    return _demo_run_response(run_id, "telemetry", service)
